@@ -40,6 +40,12 @@ type User struct {
 	Name     string `json:"name" validate:"required"`
 }
 
+type Claims struct {
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	jwt.RegisteredClaims
+}
+
 var db *sql.DB
 var JwtSecret []byte
 
@@ -88,9 +94,9 @@ func login(c echo.Context) error {
 	var loginData Login
 
 	if err := c.Bind(&loginData); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid Input"})
+		//error code 400
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Login Failed"}) //"Invalid Input"
 	}
-
 	//cek username apakah email atau username
 	var sqlStatement string
 	if isEmail(loginData.Username) {
@@ -103,31 +109,47 @@ func login(c echo.Context) error {
 	err := db.QueryRow(sqlStatement, loginData.Username).Scan(&storedUsername, &storedPasswordHash)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"})
+			// error 500 //ini kan error 401, jadi gimana?
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"}) //"User Not Found"
 		}
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database Error"})
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Database Error"
 	}
 
 	// hash the provided password and compare with stored hash
 	err = bcrypt.CompareHashAndPassword([]byte(storedPasswordHash), []byte(loginData.Password))
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"})
+		// error 500 //ini kan error 401, jadi gimana?
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"}) //"Invalid Password"
 	}
 
 	// ambil role dari db
 	var role string
 	err = db.QueryRow(`SELECT role FROM users WHERE username=$1`, storedUsername).Scan(&role)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database Error"})
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Database Error"
 	}
 
-	// generate JWT token
-	token, err := generateToken(storedUsername, role)
+	// generate JWT access token
+	token, err := generateAccessToken(storedUsername, role)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Token Generation Failed"})
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Token Generation Failed"
 	}
 
-	return c.JSON(http.StatusOK, echo.Map{"token": token})
+	// generate JWT refresh token
+	refreshToken, err := generateRefreshToken(storedUsername, role)
+	if err != nil {
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Token Generation Failed"
+	}
+
+	// return token
+	c.Response().Header().Set("Authorization", "Bearer "+token)
+	c.Response().Header().Set("Refresh-Token", "Bearer "+refreshToken)
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "Login successful", "token": token, "refresh_token": refreshToken})
 }
 
 func isEmail(input string) bool {
@@ -140,17 +162,30 @@ func isEmail(input string) bool {
 	return false
 }
 
-func generateToken(username string, role string) (string, error) {
+func generateAccessToken(username string, role string) (string, error) {
 	JwtSecret = []byte(os.Getenv("secret_key"))
-
-	//klaim username dari db
-	claims := jwt.MapClaims{
-		"authorized": true,
-		"username":   username,
-		"role":       role,
-		"exp":        time.Now().Add(time.Minute * 60).Unix(),
+	claims := &Claims{
+		Username: username,
+		Role:     role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
 	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(JwtSecret)
+}
 
+func generateRefreshToken(username string, role string) (string, error) {
+	JwtSecret = []byte(os.Getenv("secret_key"))
+	claims := &Claims{
+		Username: username,
+		Role:     role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(JwtSecret)
 }
@@ -158,11 +193,13 @@ func generateToken(username string, role string) (string, error) {
 func registerUser(c echo.Context) error {
 	var newUser User
 	if err := c.Bind(&newUser); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid Input"})
+		//error code 400
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Input"
 	}
 
 	if err := c.Validate(&newUser); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Cek " + err.Error()})
+		//error code 400
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Validation Error"
 	}
 
 	//insert variable default, Enum status, role, lang
@@ -171,7 +208,8 @@ func registerUser(c echo.Context) error {
 	// hash password
 	hashedPassword, err := hashPassword(newUser.Password)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Password Hashing Failed"})
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Password Hashing Failed"
 	}
 
 	// insert to db
