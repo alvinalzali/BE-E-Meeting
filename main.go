@@ -149,6 +149,8 @@ func login(c echo.Context) error {
 	c.Response().Header().Set("Authorization", "Bearer "+token)
 	c.Response().Header().Set("Refresh-Token", "Bearer "+refreshToken)
 
+	// apa yang dimasukan ke cookie?
+
 	return c.JSON(http.StatusOK, echo.Map{"message": "Login successful", "token": token, "refresh_token": refreshToken})
 }
 
