@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"log"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	jwt "github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -109,13 +109,20 @@ func login(c echo.Context) error {
 	}
 
 	// hash the provided password and compare with stored hash
-	hashedInputPassword := hashPassword(loginData.Password)
-	if hashedInputPassword != storedPasswordHash {
+	err = bcrypt.CompareHashAndPassword([]byte(storedPasswordHash), []byte(loginData.Password))
+	if err != nil {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"})
 	}
 
+	// ambil role dari db
+	var role string
+	err = db.QueryRow(`SELECT role FROM users WHERE username=$1`, storedUsername).Scan(&role)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database Error"})
+	}
+
 	// generate JWT token
-	token, err := generateToken()
+	token, err := generateToken(storedUsername, role)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Token Generation Failed"})
 	}
@@ -133,19 +140,19 @@ func isEmail(input string) bool {
 	return false
 }
 
-func generateToken() (string, error) {
+func generateToken(username string, role string) (string, error) {
 	JwtSecret = []byte(os.Getenv("secret_key"))
-	jwt := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"username": "alvin",
-		"role":     "admin",
-		"exp":      time.Now().Add(60 * time.Minute).Unix(),
-	})
 
-	tokenString, err := jwt.SignedString(JwtSecret)
-	if err != nil {
-		return "", err
+	//klaim username dari db
+	claims := jwt.MapClaims{
+		"authorized": true,
+		"username":   username,
+		"role":       role,
+		"exp":        time.Now().Add(time.Minute * 60).Unix(),
 	}
-	return tokenString, nil
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(JwtSecret)
 }
 
 func registerUser(c echo.Context) error {
@@ -162,20 +169,22 @@ func registerUser(c echo.Context) error {
 	status := "active"
 
 	// hash password
-	hashedPassword := hashPassword(newUser.Password)
+	hashedPassword, err := hashPassword(newUser.Password)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Password Hashing Failed"})
+	}
 
 	// insert to db
 	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status) VALUES ($1, $2, $3, $4, $5)`
-	_, err := db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status)
+	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database Error"})
 	}
 
-	return c.JSON(http.StatusOK, echo.Map{"message": "User registered successfully!"})
+	return c.JSON(http.StatusOK, echo.Map{"message": "User registered successfully"})
 }
 
-func hashPassword(password string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(password))
-	return fmt.Sprintf("%x", hasher.Sum(nil))
+func hashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
 }
