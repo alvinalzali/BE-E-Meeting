@@ -151,7 +151,7 @@ func login(c echo.Context) error {
 
 	// apa yang dimasukan ke cookie?
 
-	return c.JSON(http.StatusOK, echo.Map{"message": "Login successful", "token": token, "refresh_token": refreshToken})
+	return c.JSON(http.StatusOK, echo.Map{"message": "Login successful", "accessToken": token, "refreshToken": refreshToken})
 }
 
 func isEmail(input string) bool {
