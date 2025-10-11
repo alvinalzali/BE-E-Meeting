@@ -218,7 +218,7 @@ func registerUser(c echo.Context) error {
 	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status) VALUES ($1, $2, $3, $4, $5)`
 	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database Error"})
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Database Error"
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{"message": "User registered successfully"})
