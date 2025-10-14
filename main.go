@@ -36,7 +36,8 @@ type Login struct {
 type User struct {
 	Username string `json:"username" validate:"required"`
 	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"`
+	// password harus ada angka, huruf besar, huruf kecil, dan simbol
+	Password string `json:"password" validate:"required,min=8,max=32"`
 	Name     string `json:"name" validate:"required"`
 }
 
@@ -194,6 +195,7 @@ func generateRefreshToken(username string, role string) (string, error) {
 
 func registerUser(c echo.Context) error {
 	var newUser User
+
 	if err := c.Bind(&newUser); err != nil {
 		//error code 400
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Input"
@@ -204,8 +206,10 @@ func registerUser(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Validation Error"
 	}
 
-	//insert variable default, Enum status, role, lang
-	status := "active"
+	// cek password apakah ada angka, huruf besar, huruf kecil, dan simbol
+	if !isValidPassword(newUser.Password) {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"})
+	}
 
 	// hash password
 	hashedPassword, err := hashPassword(newUser.Password)
@@ -213,6 +217,9 @@ func registerUser(c echo.Context) error {
 		// error 500
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Password Hashing Failed"
 	}
+
+	//insert variable default, Enum status, role, lang
+	status := "active"
 
 	// insert to db
 	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status) VALUES ($1, $2, $3, $4, $5)`
@@ -222,6 +229,24 @@ func registerUser(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{"message": "User registered successfully"})
+}
+
+func isValidPassword(password string) bool {
+	var hasUpper, hasLower, hasNumber, hasSpecial bool
+	for _, char := range password {
+		switch {
+		case 'A' <= char && char <= 'Z':
+			hasUpper = true
+		case 'a' <= char && char <= 'z':
+			hasLower = true
+		case '0' <= char && char <= '9':
+			hasNumber = true
+		case (char >= 33 && char <= 47) || (char >= 58 && char <= 64) ||
+			(char >= 91 && char <= 96) || (char >= 123 && char <= 126):
+			hasSpecial = true
+		}
+	}
+	return hasUpper && hasLower && hasNumber && hasSpecial
 }
 
 func hashPassword(password string) (string, error) {
