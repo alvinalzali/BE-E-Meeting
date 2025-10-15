@@ -1,204 +1,422 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/go-playground/validator/v10"
+	jwt "github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+
+	_ "github.com/lib/pq"
 )
 
-// Model
+// -------------------- STRUCT --------------------
+
+// Validator untuk validasi struct request
+type CustomValdator struct {
+	validator *validator.Validate
+}
+
+func (cv *CustomValdator) Validate(i interface{}) error {
+	return cv.validator.Struct(i)
+}
+
+// Untuk login menggunakan username/email
+type Login struct {
+	Username string `json:"username" validate:"required"`
+	Password string `json:"password" validate:"required"`
+}
+
+// Untuk registrasi user baru
+type User struct {
+	Username string `json:"username" validate:"required"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required"`
+	Name     string `json:"name" validate:"required"`
+}
+
+// Untuk JWT claims
+type Claims struct {
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+// Request body untuk endpoint rooms
+type RoomRequest struct {
+	Name         string  `json:"name"`
+	Type         string  `json:"type"`
+	Capacity     int     `json:"capacity"`
+	PricePerHour float64 `json:"pricePerHour"`
+	ImageURL     string  `json:"imageURL"`
+}
+
+// Response struct untuk rooms
 type Room struct {
-	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name         string    `gorm:"size:100;not null" json:"name"`
-	PricePerHour float64   `gorm:"type:numeric(12,2);not null" json:"pricePerHour"`
-	ImageURL     string    `gorm:"size:255;column:image_url" json:"imageURL"`
-	Capacity     int       `gorm:"not null" json:"capacity"`
-	RoomType     string    `gorm:"size:20;not null;column:room_type" json:"type"`
-	CreatedAt    time.Time `gorm:"autoCreateTime" json:"createdAt"`
-	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
+	ID           int       `json:"id"`
+	Name         string    `json:"name"`
+	RoomType     string    `json:"type"`
+	Capacity     int       `json:"capacity"`
+	PricePerHour float64   `json:"pricePerHour"`
+	PictureURL   string    `json:"imageURL"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+// Response struct untuk snacks
 type Snack struct {
-	ID        uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name      string    `gorm:"size:100;not null" json:"name"`
-	Category  string    `gorm:"size:50;not null" json:"category"`
-	Unit      string    `gorm:"size:20;not null" json:"unit"`
-	Price     float64   `gorm:"type:numeric(12,2);not null" json:"price"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt"`
+	ID       int     `json:"id"`
+	Name     string  `json:"name"`
+	Unit     string  `json:"unit"`
+	Price    float64 `json:"price"`
+	Category string  `json:"category"`
 }
 
-type ReservationDetail struct {
-	ID                uint      `gorm:"primaryKey;autoIncrement" json:"id"`
-	ReservationID     int       `json:"reservation_id"`
-	RoomID            int       `json:"room_id"`
-	RoomName          string    `gorm:"size:100;not null" json:"room_name"`
-	RoomPrice         float64   `gorm:"type:numeric(12,2);not null" json:"room_price"`
-	SnackID           int       `json:"snack_id"`
-	SnackName         string    `gorm:"size:100;not null" json:"snack_name"`
-	SnackPrice        float64   `gorm:"type:numeric(12,2);not null" json:"snack_price"`
-	DurationMinute    int       `json:"duration_minute"`
-	TotalParticipants int       `json:"total_participants"`
-	StartAt           time.Time `json:"start_at"`
-	EndAt             time.Time `json:"end_at"`
-	TotalSnack        float64   `gorm:"type:numeric(14,2)" json:"total_snack"`
-	TotalRoom         float64   `gorm:"type:numeric(14,2)" json:"total_room"`
-	CreatedAt         time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt         time.Time `gorm:"autoUpdateTime" json:"updated_at"`
-}
+// -------------------- GLOBAL VAR --------------------
+var db *sql.DB
+var JwtSecret []byte
 
-var validRoomTypes = map[string]bool{
-	"small":  true,
-	"medium": true,
-	"large":  true,
-}
-
-func initDB() *gorm.DB {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		log.Fatal("[error] DATABASE_URL is not set in environment")
-	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+// -------------------- MAIN --------------------
+func main() {
+	// Load .env file
+	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("[error] connect db: %v", err)
+		log.Fatal("Error loading .env file")
 	}
-	if err := db.AutoMigrate(&Room{}, &Snack{}, &ReservationDetail{}); err != nil {
-		log.Fatalf("[error] migrate: %v", err)
+
+	// Ambil konfigurasi database dari environment variable
+	dbHost := os.Getenv("DB_HOST")
+	dbPort, err := strconv.Atoi(os.Getenv("DB_PORT"))
+	if err != nil {
+		log.Fatal("Invalid DB_PORT value in .env")
 	}
-	fmt.Println("✅ Database connected")
+	dbUser := os.Getenv("DB_USER")
+	dbPassword := os.Getenv("DB_PASSWORD")
+	dbName := os.Getenv("DB_NAME")
+	serverPort := os.Getenv("SERVER_PORT")
+	if serverPort == "" {
+		serverPort = "8080"
+	}
+
+	// Koneksi ke database
+	db = connectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
+
+	e := echo.New()
+	e.Validator = &CustomValdator{validator: validator.New()}
+
+	// -------------------- ERROR HANDLER --------------------
+	// Custom error handler sesuai kontrak API
+	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		if he, ok := err.(*echo.HTTPError); ok {
+			switch he.Code {
+			case http.StatusNotFound:
+				c.JSON(http.StatusNotFound, echo.Map{"message": "url not found"})
+			case http.StatusUnauthorized:
+				c.JSON(http.StatusUnauthorized, echo.Map{"message": "unauthorized"})
+			default:
+				c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+	}
+
+	// -------------------- ROUTES --------------------
+	e.POST("/login", login)
+	e.POST("/register", registerUser)
+
+	e.POST("/rooms", CreateRoom)
+	e.GET("/rooms", GetRooms)
+	e.GET("/rooms/:id", GetRoomByID)
+	e.PUT("/rooms/:id", UpdateRoom)
+	e.DELETE("/rooms/:id", DeleteRoom)
+	e.GET("/snacks", GetSnacks)
+
+	fmt.Println("Server running on port", serverPort)
+	e.Logger.Fatal(e.Start(":" + serverPort))
+}
+
+// -------------------- DB CONNECTION --------------------
+// Fungsi koneksi ke database PostgreSQL
+func connectDB(username, password, dbname, host string, port int) *sql.DB {
+	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+		host, port, username, password, dbname)
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := db.Ping(); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Connected to database successfully")
 	return db
 }
 
-func main() {
-	db := initDB()
-	seedSnacks(db)
+// -------------------- AUTH HANDLER --------------------
 
-	e := echo.New()
+// Handler login user
+func login(c echo.Context) error {
+	var loginData Login
 
-	// auth middleware + inject db into context
-	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			auth := strings.TrimSpace(c.Request().Header.Get("Authorization"))
-			log.Printf("Authorization header: %q", auth)
-			if auth == "" {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
-			}
-			c.Set("db", db)
-			return next(c)
-		}
-	})
-
-	// custom JSON 404
-	e.HTTPErrorHandler = func(err error, c echo.Context) {
-		if he, ok := err.(*echo.HTTPError); ok && he.Code == http.StatusNotFound {
-			_ = c.JSON(http.StatusNotFound, map[string]string{"message": "url not found"})
-			return
-		}
-		c.Echo().DefaultHTTPErrorHandler(err, c)
+	if err := c.Bind(&loginData); err != nil {
+		// error code 400
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Login Failed"}) // "Invalid Input"
+	}
+	// cek username apakah email atau username
+	var sqlStatement string
+	if isEmail(loginData.Username) {
+		sqlStatement = `SELECT username, password_hash FROM users WHERE email=$1`
+	} else {
+		sqlStatement = `SELECT username, password_hash FROM users WHERE username=$1`
 	}
 
-	// routes
-	e.POST("/rooms", createRoom)
-	e.GET("/rooms", getRooms)
-	e.PUT("/rooms/:id", updateRoom)
-	e.DELETE("/rooms/:id", deleteRoom)
-	e.GET("/snacks", getSnacks)
-	e.GET("/reservation-details", getReservationDetails)
+	var storedUsername, storedPasswordHash string
+	err := db.QueryRow(sqlStatement, loginData.Username).Scan(&storedUsername, &storedPasswordHash)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// error 401
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"}) // "User Not Found"
+		}
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) // "Database Error"
+	}
 
-	addr := "localhost:8080"
-	fmt.Println("listening on", addr)
-	e.Logger.Fatal(e.Start(addr))
+	// hash the provided password and compare with stored hash
+	err = bcrypt.CompareHashAndPassword([]byte(storedPasswordHash), []byte(loginData.Password))
+	if err != nil {
+		// error 401
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"}) // "Invalid Password"
+	}
+
+	// ambil role dari db
+	var role string
+	err = db.QueryRow(`SELECT role FROM users WHERE username=$1`, storedUsername).Scan(&role)
+	if err != nil {
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) // "Database Error"
+	}
+
+	// generate JWT access token
+	token, err := generateAccessToken(storedUsername, role)
+	if err != nil {
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) // "Token Generation Failed"
+	}
+
+	// generate JWT refresh token
+	refreshToken, err := generateRefreshToken(storedUsername, role)
+	if err != nil {
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) // "Token Generation Failed"
+	}
+
+	// return token di header
+	c.Response().Header().Set("Authorization", "Bearer "+token)
+	c.Response().Header().Set("Refresh-Token", "Bearer "+refreshToken)
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "Login successful", "accessToken": token, "refreshToken": refreshToken})
 }
 
-// Create Room - POST /rooms
-func createRoom(c echo.Context) error {
-	db := c.Get("db").(*gorm.DB)
+// Cek apakah input berupa email
+func isEmail(input string) bool {
+	for _, char := range input {
+		if char == '@' {
+			return true
+		}
+	}
+	return false
+}
 
-	var req Room
+// -------------------- JWT TOKEN GENERATOR --------------------
+
+// Generate JWT access token
+func generateAccessToken(username string, role string) (string, error) {
+	JwtSecret = []byte(os.Getenv("SECRET_KEY"))
+	claims := &Claims{
+		Username: username,
+		Role:     role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(JwtSecret)
+}
+
+// Generate JWT refresh token
+func generateRefreshToken(username string, role string) (string, error) {
+	JwtSecret = []byte(os.Getenv("SECRET_KEY"))
+	claims := &Claims{
+		Username: username,
+		Role:     role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(JwtSecret)
+}
+
+// Handler registrasi user baru
+func registerUser(c echo.Context) error {
+	var newUser User
+	if err := c.Bind(&newUser); err != nil {
+		// error code 400
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) // "Invalid Input"
+	}
+
+	if err := c.Validate(&newUser); err != nil {
+		// error code 400
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) // "Validation Error"
+	}
+
+	// insert variable default, Enum status, role, lang
+	status := "active"
+
+	// hash password
+	hashedPassword, err := hashPassword(newUser.Password)
+	if err != nil {
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) // "Password Hashing Failed"
+	}
+
+	// insert to db
+	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status) VALUES ($1, $2, $3, $4, $5)`
+	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database Error"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "User registered successfully"})
+}
+
+// Hash password dengan bcrypt
+func hashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
+}
+
+// -------------------- HANDLER ROOMS --------------------
+
+// (POST /rooms) - Tambah ruangan baru
+func CreateRoom(c echo.Context) error {
+	var req RoomRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "invalid request"})
+		// error jika format request tidak sesuai
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	req.RoomType = strings.TrimSpace(req.RoomType)
-	req.Name = strings.TrimSpace(req.Name)
-
-	if !validRoomTypes[req.RoomType] {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "room type is not valid"})
-	}
-	if req.Capacity <= 0 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "capacity must be larger more than 0"})
-	}
-	if req.Name == "" || req.PricePerHour <= 0 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "invalid request"})
+	// validasi tipe dan kapasitas ruangan
+	if req.Type != "small" && req.Type != "medium" && req.Type != "large" || req.Capacity <= 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "room type is not valid / capacity must be larger more than 0",
+		})
 	}
 
-	if err := db.Create(&req).Error; err != nil {
-		log.Printf("[error] create room: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	query := `
+        INSERT INTO rooms (name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+    `
+	_, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL)
+	if err != nil {
+		log.Println("CreateRoom DB insert error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	return c.JSON(http.StatusCreated, map[string]string{"message": "create room success"})
+	return c.JSON(http.StatusCreated, echo.Map{"message": "room created successfully"})
 }
 
-// Get Rooms - GET /rooms?name=&type=&capacity=&page=1&pageSize=20
-func getRooms(c echo.Context) error {
-	db := c.Get("db").(*gorm.DB)
-	var rooms []Room
+// (GET /rooms) - List ruangan
+func GetRooms(c echo.Context) error {
+	name := c.QueryParam("name")
+	roomType := c.QueryParam("type")
+	capacityParam := c.QueryParam("capacity")
+	pageParam := c.QueryParam("page")
+	pageSizeParam := c.QueryParam("pageSize")
 
-	name := strings.TrimSpace(c.QueryParam("name"))
-	rtype := strings.TrimSpace(c.QueryParam("type"))
-	capacityStr := strings.TrimSpace(c.QueryParam("capacity"))
-	pageStr := c.QueryParam("page")
-	pageSizeStr := c.QueryParam("pageSize")
-
-	if rtype != "" && !validRoomTypes[rtype] {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "room type is not valid"})
+	// validasi tipe ruangan
+	if roomType != "" && roomType != "small" && roomType != "medium" && roomType != "large" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "room type is not valid"})
 	}
 
 	page := 1
-	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+	pageSize := 10
+	if p, err := strconv.Atoi(pageParam); err == nil && p > 0 {
 		page = p
 	}
-	pageSize := 20
-	if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
+	if ps, err := strconv.Atoi(pageSizeParam); err == nil && ps > 0 {
 		pageSize = ps
 	}
+	offset := (page - 1) * pageSize
 
-	query := db.Model(&Room{})
+	query := `
+        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
+        FROM rooms
+        WHERE 1=1
+    `
+	var args []interface{}
+	argIndex := 1
+
 	if name != "" {
-		query = query.Where("name ILIKE ?", "%"+name+"%")
+		query += fmt.Sprintf(" AND LOWER(name) LIKE LOWER($%d)", argIndex)
+		args = append(args, "%"+name+"%")
+		argIndex++
 	}
-	if rtype != "" {
-		query = query.Where("room_type = ?", rtype)
+	if roomType != "" {
+		query += fmt.Sprintf(" AND room_type = $%d", argIndex)
+		args = append(args, roomType)
+		argIndex++
 	}
-	if capacityStr != "" {
-		if capFilter, err := strconv.Atoi(capacityStr); err == nil {
-			query = query.Where("capacity >= ?", capFilter)
+	if capacityParam != "" {
+		if capVal, err := strconv.Atoi(capacityParam); err == nil {
+			query += fmt.Sprintf(" AND capacity >= $%d", argIndex)
+			args = append(args, capVal)
+			argIndex++
 		}
 	}
 
-	var totalData int64
-	if err := query.Count(&totalData).Error; err != nil {
-		log.Printf("[error] count rooms: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
-	}
-	totalPage := (int(totalData) + pageSize - 1) / pageSize
-
-	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Order("id asc").Find(&rooms).Error; err != nil {
-		log.Printf("[error] find rooms: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	countQuery := "SELECT COUNT(*) FROM (" + query + ") AS total"
+	var totalData int
+	err := db.QueryRow(countQuery, args...).Scan(&totalData)
+	if err != nil {
+		log.Println("Count query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message":   "get rooms success",
+	query += fmt.Sprintf(" ORDER BY id ASC LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
+	args = append(args, pageSize, offset)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		log.Println("GetRooms query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+	defer rows.Close()
+
+	var rooms []Room
+	for rows.Next() {
+		var r Room
+		if err := rows.Scan(&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour, &r.PictureURL, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			log.Println("GetRooms scan error:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+		rooms = append(rooms, r)
+	}
+
+	totalPage := (totalData + pageSize - 1) / pageSize
+	return c.JSON(http.StatusOK, echo.Map{
+		"message":   "success",
 		"data":      rooms,
 		"page":      page,
 		"pageSize":  pageSize,
@@ -207,114 +425,121 @@ func getRooms(c echo.Context) error {
 	})
 }
 
-// Update Room - PUT /rooms/:id
-func updateRoom(c echo.Context) error {
-	db := c.Get("db").(*gorm.DB)
-	id := c.Param("id")
-
-	var room Room
-	if err := db.First(&room, id).Error; err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"message": "url not found"})
+// (GET /rooms/:id) - Detail ruangan
+func GetRoomByID(c echo.Context) error {
+	idParam := c.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
 	}
 
-	var req Room
+	query := `
+        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
+        FROM rooms WHERE id = $1
+    `
+	var r Room
+	err = db.QueryRow(query, id).Scan(
+		&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour,
+		&r.PictureURL, &r.CreatedAt, &r.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
+	} else if err != nil {
+		log.Println("GetRoomByID DB error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "success",
+		"data":    r,
+	})
+}
+
+// (PUT /rooms/:id) - Update ruangan
+func UpdateRoom(c echo.Context) error {
+	idParam := c.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
+	}
+
+	var req RoomRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "invalid request"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	req.RoomType = strings.TrimSpace(req.RoomType)
-	if !validRoomTypes[req.RoomType] {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "room type is not valid"})
-	}
-	if req.Capacity <= 0 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "capacity must be larger more than 0"})
+	if req.Type != "small" && req.Type != "medium" && req.Type != "large" || req.Capacity <= 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "room type is not valid / capacity must be larger more than 0",
+		})
 	}
 
-	room.Name = req.Name
-	room.PricePerHour = req.PricePerHour
-	room.ImageURL = req.ImageURL
-	room.Capacity = req.Capacity
-	room.RoomType = req.RoomType
-
-	if err := db.Save(&room).Error; err != nil {
-		log.Printf("[error] update room: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	query := `
+        UPDATE rooms 
+        SET name=$1, room_type=$2, capacity=$3, price_per_hour=$4, picture_url=$5, updated_at=NOW()
+        WHERE id=$6
+    `
+	res, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL, id)
+	if err != nil {
+		log.Println("UpdateRoom DB error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"message": "update room success"})
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "room updated successfully"})
 }
 
-// Delete Room - DELETE /rooms/:id
-func deleteRoom(c echo.Context) error {
-	db := c.Get("db").(*gorm.DB)
-	id := c.Param("id")
-
-	var room Room
-	if err := db.First(&room, id).Error; err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"message": "url not found"})
+// (DELETE /rooms/:id) - Hapus ruangan
+func DeleteRoom(c echo.Context) error {
+	idParam := c.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
 	}
 
-	var count int64
-	if err := db.Table("reservation_details").Where("room_id = ?", id).Count(&count).Error; err != nil {
-		log.Printf("[error] check reservation: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
-	}
-	if count > 0 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "cannot delete rooms. room has reservation"})
+	query := `DELETE FROM rooms WHERE id=$1`
+	res, err := db.Exec(query, id)
+	if err != nil {
+		log.Println("DeleteRoom DB error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	if err := db.Delete(&room).Error; err != nil {
-		log.Printf("[error] delete room: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"message": "delete room success"})
+	return c.JSON(http.StatusOK, echo.Map{"message": "delete room success"})
 }
 
-// Get Snacks - GET /snacks
-func getSnacks(c echo.Context) error {
-	db := c.Get("db").(*gorm.DB)
+// -------------------- HANDLER SNACKS --------------------
+
+// (GET /snacks) - List snack
+func GetSnacks(c echo.Context) error {
+	rows, err := db.Query(`SELECT id, name, unit, price, category FROM snacks ORDER BY id ASC`)
+	if err != nil {
+		log.Println("DB query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+	defer rows.Close()
+
 	var snacks []Snack
-
-	if err := db.Find(&snacks).Error; err != nil {
-		log.Printf("[error] get snacks: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	for rows.Next() {
+		var s Snack
+		if err := rows.Scan(&s.ID, &s.Name, &s.Unit, &s.Price, &s.Category); err != nil {
+			log.Println("Scan error:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+		snacks = append(snacks, s)
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "get snacks success",
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "success",
 		"data":    snacks,
 	})
-}
-
-// Get Reservation Details - GET /reservation-details
-func getReservationDetails(c echo.Context) error {
-	db := c.Get("db").(*gorm.DB)
-	var details []ReservationDetail
-
-	if err := db.Find(&details).Error; err != nil {
-		log.Printf("[error] get reservation_details: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "get reservation details success",
-		"data":    details,
-	})
-}
-
-// Seed data snack awal (hanya sekali)
-func seedSnacks(db *gorm.DB) {
-	var count int64
-	db.Model(&Snack{}).Count(&count)
-	if count > 0 {
-		return
-	}
-	snacks := []Snack{
-		{Name: "Snack A", Category: "food", Unit: "box", Price: 10000},
-		{Name: "Snack B", Category: "drink", Unit: "person", Price: 5000},
-	}
-	for _, snack := range snacks {
-		db.Create(&snack)
-	}
 }
