@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	_ "BE-E-MEETING/docs"
+
 	"github.com/go-playground/validator/v10"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -17,6 +19,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	_ "github.com/lib/pq"
+	echoSwagger "github.com/swaggo/echo-swagger"
 )
 
 type CustomValdator struct {
@@ -75,13 +78,23 @@ type ResetRequest struct {
 	Email string `json:"email" validate:"required,email"`
 }
 
-type PasswordReset struct {
+type PasswordConfirmReset struct {
 	ConfirmPassword string `json:"confirm_password" validate:"required"`
 	NewPassword     string `json:"new_password" validate:"required"`
 }
 
 var db *sql.DB
 var JwtSecret []byte
+
+// @title E-Meeting API
+// @version 1.0
+// @description This is a sample server for E-Meeting.
+// @termsOfService http://swagger.io/terms/
+
+// @securityDefinitions.apikey  BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 Type "Bearer" followed by a space and JWT token.
 
 func main() {
 	err := godotenv.Load()
@@ -102,17 +115,22 @@ func main() {
 
 	e.Validator = &CustomValdator{validator: validator.New()}
 
+	// route for swagger
+	e.GET("/swagger/*", echoSwagger.WrapHandler)
+
+	// route for login, register, password reset
 	e.POST("/login", login)
-	e.POST("/register", registerUser)
-	e.POST("/password/reset_request", passwordReset)
-	e.PUT("/password/reset/:id", passwordResetId) //id ini token reset password yang dikirim via email
+	e.POST("/register", RegisterUser)
+	e.POST("/password/reset_request", PasswordReset)
+	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
 
 	// route group users
 	userGroup := e.Group("/users")
 	userGroup.Use(middlewareAuth)
+
 	// route users
-	userGroup.GET("/:id", getUserByID)
-	userGroup.PUT("/:id", updateUserByID)
+	userGroup.GET("/:id", GetUserByID)
+	userGroup.PUT("/:id", UpdateUserByID)
 
 	e.Logger.Fatal(e.Start(":8080"))
 
@@ -248,7 +266,18 @@ func generateResetToken(email string) (string, error) {
 	return token.SignedString(JwtSecret)
 }
 
-func registerUser(c echo.Context) error {
+// RegisterUser godoc
+// @Summary Register a new user
+// @Description Register a new user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param user body User true "User object to be registered"
+// @Success 201 {object} User
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /register [post]
+func RegisterUser(c echo.Context) error {
 	var newUser User
 
 	if err := c.Bind(&newUser); err != nil {
@@ -309,9 +338,33 @@ func hashPassword(password string) (string, error) {
 	return string(bytes), err
 }
 
-func passwordResetId(c echo.Context) error {
+// PasswordResetId godoc
+// @Summary Reset user password
+// @Description Reset user password using a valid reset token
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "Reset Token"
+// @Param password body PasswordConfirmReset true "New Password and Confirm Password"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /password/reset/{id} [put]
+func PasswordResetId(c echo.Context) error {
 	id := c.Param("id")
-	var passReset PasswordReset
+	var passReset PasswordConfirmReset
+
+	//cek apakah id ini valid JWT
+	token, err := jwt.Parse(id, func(token *jwt.Token) (interface{}, error) {
+		return JwtSecret, nil
+	})
+	if err != nil {
+		//error code 400
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Input"
+	}
+	if !token.Valid {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Token"
+	}
 
 	if err := c.Bind(&passReset); err != nil {
 		//error code 400
@@ -348,7 +401,18 @@ func passwordResetId(c echo.Context) error {
 	return c.JSON(http.StatusOK, echo.Map{"message": "Password reset successfully"})
 }
 
-func passwordReset(c echo.Context) error {
+// PasswordReset godoc
+// @Summary Request password reset
+// @Description Request a password reset token to be sent to the user's email
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param email body ResetRequest true "Email"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /password/reset [post]
+func PasswordReset(c echo.Context) error {
 	var resetReq ResetRequest
 
 	if err := c.Bind(&resetReq); err != nil {
@@ -412,7 +476,20 @@ func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func getUserByID(c echo.Context) error {
+// GetUserByID godoc
+// @Summary Get user by ID
+// @Description Retrieve user details by user ID
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security     BearerAuth
+// @Router /users/{id} [get]
+func GetUserByID(c echo.Context) error {
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
@@ -441,7 +518,20 @@ func getUserByID(c echo.Context) error {
 	})
 }
 
-func updateUserByID(c echo.Context) error {
+// UpdateUserByID godoc
+// @Summary Update user by ID
+// @Description Update user details by user ID require authentication from header
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param user body updateUser true "User object to be updated"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security     BearerAuth
+// @Router /users/{id} [put]
+func UpdateUserByID(c echo.Context) error {
 	id := c.Param("id")
 	var userUpdate updateUser
 
