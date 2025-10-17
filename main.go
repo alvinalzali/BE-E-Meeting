@@ -15,8 +15,8 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
-
-	_ "github.com/lib/pq"
+	echoSwagger "github.com/swaggo/echo-swagger"
+	docs "github.com/alvinalzali/BE-E-Meeting/docs" // <-- ganti dengan module/path di go.mod jika berbeda
 )
 
 // -------------------- STRUCT --------------------
@@ -86,6 +86,12 @@ var db *sql.DB
 var JwtSecret []byte
 
 // -------------------- MAIN --------------------
+// @title BE E-Meeting API
+// @version 1.0
+// @description API untuk aplikasi E-Meeting
+// @host localhost:8080
+// @BasePath /
+// @schemes http
 func main() {
 	// Load .env file
 	err := godotenv.Load()
@@ -106,6 +112,9 @@ func main() {
 	if serverPort == "" {
 		serverPort = "8080"
 	}
+
+	// set host di Swagger agar UI menunjuk ke port yang benar
+	docs.SwaggerInfo.Host = "localhost:" + serverPort
 
 	// Koneksi ke database
 	db = connectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
@@ -140,6 +149,9 @@ func main() {
 	e.PUT("/rooms/:id", UpdateRoom)
 	e.DELETE("/rooms/:id", DeleteRoom)
 	e.GET("/snacks", GetSnacks)
+
+	// Swagger UI
+	e.GET("/swagger/*", echoSwagger.WrapHandler)
 
 	fmt.Println("Server running on port", serverPort)
 	e.Logger.Fatal(e.Start(":" + serverPort))
