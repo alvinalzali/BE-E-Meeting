@@ -1,4 +1,15 @@
 definitions:
+  main.Login:
+    properties:
+      password:
+        type: string
+      username:
+        description: login using username or email
+        type: string
+    required:
+    - password
+    - username
+    type: object
   main.PasswordConfirmReset:
     properties:
       confirm_password:
@@ -68,6 +79,48 @@ info:
   title: E-Meeting API
   version: "1.0"
 paths:
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user and return JWT tokens
+      parameters:
+      - description: Login credentials
+        in: body
+        name: login
+        required: true
+        schema:
+          $ref: '#/definitions/main.Login'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: User login
+      tags:
+      - User
   /password/reset:
     post:
       consumes:

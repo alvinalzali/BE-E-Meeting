@@ -151,6 +151,18 @@ func connectDB(username, password, dbname, host string, port int) *sql.DB {
 	return db
 }
 
+// login godoc
+// @Summary User login
+// @Description Authenticate user and return JWT tokens
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param login body Login true "Login credentials"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /login [post]
 func login(c echo.Context) error {
 	var loginData Login
 
