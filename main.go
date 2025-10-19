@@ -3,10 +3,12 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "BE-E-MEETING/docs"
@@ -66,6 +68,7 @@ type updateUser struct {
 	Username   string `json:"username" validate:"omitempty"`
 	Password   string `json:"password" validate:"omitempty"`
 	Name       string `json:"name" validate:"omitempty"`
+	Updated_at string `json:"updatedAt"`
 }
 
 type Claims struct {
@@ -83,6 +86,8 @@ type PasswordConfirmReset struct {
 	NewPassword     string `json:"new_password" validate:"required"`
 }
 
+var BaseURL string = "http://localhost:8080/"
+var ImageURL string
 var db *sql.DB
 var JwtSecret []byte
 
@@ -123,6 +128,7 @@ func main() {
 	e.POST("/register", RegisterUser)
 	e.POST("/password/reset_request", PasswordReset)
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
+	e.POST("/uploads", saveImage)
 
 	// route group users
 	userGroup := e.Group("/users")
@@ -518,101 +524,109 @@ func GetUserByID(c echo.Context) error {
 	})
 }
 
+// buat fungsi UpdateUserByID dengan request dan response sesuai updateUser struct
 // UpdateUserByID godoc
 // @Summary Update user by ID
-// @Description Update user details by user ID require authentication from header
+// @Description Update user details by user ID
 // @Tags User
 // @Accept json
 // @Produce json
 // @Param id path string true "User ID"
-// @Param user body updateUser true "User object to be updated"
-// @Success 200 {object} map[string]string
+// @Param user body main.updateUser true "User object to be updated"
+// @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Security     BearerAuth
 // @Router /users/{id} [put]
 func UpdateUserByID(c echo.Context) error {
 	id := c.Param("id")
-	var userUpdate updateUser
 
-	if err := c.Bind(&userUpdate); err != nil {
-		//error code 400
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Input"
-	}
-	if err := c.Validate(&userUpdate); err != nil {
-		//error code 400
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Validation Error"
-	}
-	// cek password apakah ada angka, huruf besar, huruf kecil, dan simbol
-	if userUpdate.Password != "" && !isValidPassword(userUpdate.Password) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"})
-	}
-
-	// hash password jika diupdate
-	var hashedPassword string
-	var err error
-	if userUpdate.Password != "" {
-		hashedPassword, err = hashPassword(userUpdate.Password)
-		if err != nil {
-			// error 500
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Password Hashing Failed"
-		}
-	}
-
-	// update db berdasarkan id dan field yang diupdate saja
-	sqlStatement := `UPDATE users SET `
-	params := []interface{}{}
-	paramCount := 1
-	if userUpdate.Password != "" {
-		sqlStatement += `password_hash=$` + strconv.Itoa(paramCount) + `, `
-		params = append(params, hashedPassword)
-		paramCount++
-	}
-	if userUpdate.Name != "" {
-		sqlStatement += `name=$` + strconv.Itoa(paramCount) + `, `
-		params = append(params, userUpdate.Name)
-		paramCount++
-	}
-	if userUpdate.Avatar_url != "" {
-		sqlStatement += `avatar_url=$` + strconv.Itoa(paramCount) + `, `
-		params = append(params, userUpdate.Avatar_url)
-		paramCount++
-	}
-	if userUpdate.Lang != "" {
-		sqlStatement += `lang=$` + strconv.Itoa(paramCount) + `, `
-		params = append(params, userUpdate.Lang)
-		paramCount++
-	}
-	if userUpdate.Role != "" {
-		sqlStatement += `role=$` + strconv.Itoa(paramCount) + `, `
-		params = append(params, userUpdate.Role)
-		paramCount++
-	}
-	if userUpdate.Status != "" {
-		sqlStatement += `status=$` + strconv.Itoa(paramCount) + `, `
-		params = append(params, userUpdate.Status)
-		paramCount++
-	}
-	if userUpdate.Email != "" {
-		sqlStatement += `email=$` + strconv.Itoa(paramCount) + `, `
-		params = append(params, userUpdate.Email)
-		paramCount++
-	}
-	if userUpdate.Username != "" {
-		sqlStatement += `username=$` + strconv.Itoa(paramCount) + `, `
-		params = append(params, userUpdate.Username)
-		paramCount++
-	}
-	// remove last comma and space
-	if len(params) == 0 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "No fields to update"})
-	}
-	sqlStatement = sqlStatement[:len(sqlStatement)-2]
-	sqlStatement += ` WHERE id=$` + strconv.Itoa(paramCount)
-	params = append(params, id)
-	_, err = db.Exec(sqlStatement, params...)
+	idInt, err := strconv.Atoi(id)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Database Error"
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
 	}
-	return c.JSON(http.StatusOK, echo.Map{"message": "User updated successfully"})
+
+	var user updateUser
+	if err := c.Bind(&user); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request body"})
+	}
+
+	//masukan update_at dengan waktu sekarang
+	user.Updated_at = time.Now().Format(time.RFC3339)
+
+	//jika user upload gambar baru, load dari variabel global imageURL
+	if ImageURL != "" {
+		user.Avatar_url = ImageURL
+	}
+
+	sqlStatement := `UPDATE users SET username=$1, email=$2, name=$3, avatar_url=$4, lang=$5, role=$6, status=$7, updated_at=$8 WHERE id=$9`
+	_, err = db.Exec(sqlStatement, user.Username, user.Email, user.Name, user.Avatar_url, user.Lang, user.Role, user.Status, idInt)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error", "detail": err.Error()})
+	}
+
+	//hapus gambar di temp melalui variabel global ImageURL
+	if ImageURL != "" {
+		filePath := strings.TrimPrefix(ImageURL, "/")
+		err = os.Remove(BaseURL + "assets/temp/" + filePath)
+		if err != nil {
+			fmt.Println("Failed to delete temp image:", err)
+		}
+		// reset variabel global ImageURL
+		ImageURL = ""
+	}
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "User updated successfully",
+		"data":    user,
+	})
+}
+
+// fungsi memasukan gambar ke folder temp dan mengembalikan url gambarnya
+// SaveImage godoc
+// @Summary Save an image
+// @Description Save an image to a temporary folder and return its URL
+// @Tags User
+// @Accept multipart/form-data
+// @Produce json
+// @Param image formData file true "Image file"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /uploads [post]
+func saveImage(c echo.Context) error {
+	// Simpan file ke folder temp lalu rename berdasarkan timestamp kemudian keluarkan sebagai url
+	file, err := c.FormFile("image")
+	if err != nil {
+		return err
+	}
+
+	//load file
+	src, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	//buat nama file baru berdasarkan timestamp
+	timestamp := time.Now().Unix()
+	filename := fmt.Sprintf("%d_%s", timestamp, file.Filename)
+	filePath := BaseURL + "assets/temp/" + filename
+	// Simpan file ke folder temp
+	dst, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+	// Copy file dari form ke folder temp
+	_, err = io.Copy(dst, src)
+	if err != nil {
+		return err
+	}
+	ImageURL = BaseURL + "/assets/temp/" + filename
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"message":  "Image uploaded successfully",
+		"imageURL": BaseURL + "assets/temp/" + filename,
+	})
 }
