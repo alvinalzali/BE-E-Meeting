@@ -67,7 +67,6 @@ type updateUser struct {
 	Role       string `json:"role" validate:"omitempty,oneof=admin user"`
 	Status     string `json:"status" validate:"omitempty,oneof=active inactive"`
 	Username   string `json:"username" validate:"omitempty"`
-	Password   string `json:"password" validate:"omitempty"`
 	Name       string `json:"name" validate:"omitempty"`
 	Updated_at string `json:"updatedAt"`
 }
@@ -570,17 +569,8 @@ func UpdateUserByID(c echo.Context) error {
 		user.Avatar_url = ImageURL
 	}
 
-	//hash password kalau ada
-	if user.Password != "" {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to hash password", "detail": err.Error()})
-		}
-		user.Password = string(hashedPassword)
-	}
-
-	sqlStatement := `UPDATE users SET username=$1, email=$2, name=$3, password_hash=$4, avatar_url=$5, lang=$6, role=$7, status=$8, updated_at=$9 WHERE id=$10`
-	_, err = db.Exec(sqlStatement, user.Username, user.Email, user.Name, user.Password, user.Avatar_url, user.Lang, user.Role, user.Status, user.Updated_at, idInt)
+	sqlStatement := `UPDATE users SET username=$1, email=$2, name=$3, avatar_url=$4, lang=$5, role=$6, status=$7, updated_at=$8 WHERE id=$9`
+	_, err = db.Exec(sqlStatement, user.Username, user.Email, user.Name, user.Avatar_url, user.Lang, user.Role, user.Status, user.Updated_at, idInt)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error", "detail": err.Error()})
 	}
