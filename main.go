@@ -86,6 +86,36 @@ type PasswordConfirmReset struct {
 	NewPassword     string `json:"new_password" validate:"required"`
 }
 
+// Request body untuk endpoint rooms
+type RoomRequest struct {
+	Name         string  `json:"name"`
+	Type         string  `json:"type"`
+	Capacity     int     `json:"capacity"`
+	PricePerHour float64 `json:"pricePerHour"`
+	ImageURL     string  `json:"imageURL"`
+}
+
+// Response struct untuk rooms
+type Room struct {
+	ID           int       `json:"id"`
+	Name         string    `json:"name"`
+	RoomType     string    `json:"type"`
+	Capacity     int       `json:"capacity"`
+	PricePerHour float64   `json:"pricePerHour"`
+	PictureURL   string    `json:"imageURL"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// Response struct untuk snacks
+type Snack struct {
+	ID       int     `json:"id"`
+	Name     string  `json:"name"`
+	Unit     string  `json:"unit"`
+	Price    float64 `json:"price"`
+	Category string  `json:"category"`
+}
+
 var BaseURL string = "http://localhost:8080"
 var ImageURL string
 var db *sql.DB
@@ -132,7 +162,18 @@ func main() {
 	e.POST("/register", RegisterUser)
 	e.POST("/password/reset_request", PasswordReset)
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
-	e.POST("/uploads", SaveImage)
+	e.POST("/uploads", UploadImage)
+
+	// route for rooms
+	e.POST("/rooms", CreateRoom)
+	e.GET("/rooms", GetRooms)
+	e.GET("/rooms/:id", GetRoomByID)
+	e.PUT("/rooms/:id", UpdateRoom)
+	e.DELETE("/rooms/:id", DeleteRoom)
+	e.GET("/snacks", GetSnacks)
+
+	// route for reservations
+	e.GET("/reservation/calculation", CalculateReservation)
 
 	// route group users
 	userGroup := e.Group("/users")
@@ -592,7 +633,7 @@ func UpdateUserByID(c echo.Context) error {
 }
 
 // fungsi memasukan gambar ke folder temp dan mengembalikan url gambarnya
-// SaveImage godoc
+// UploadImage godoc
 // @Summary Save an image
 // @Description Save an image
 // @Tags Image
@@ -603,7 +644,7 @@ func UpdateUserByID(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /save-image [post]
-func SaveImage(c echo.Context) error {
+func UploadImage(c echo.Context) error {
 	file, err := c.FormFile("image")
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Failed to upload image"})
@@ -655,3 +696,374 @@ func SaveImage(c echo.Context) error {
 		"imageURL": imageURL,
 	})
 }
+
+// (POST /rooms) - Tambah ruangan baru
+// CreateRoom godoc
+// @Summary Create a new room
+// @Description Create a new room
+// @Tags Room
+// @Accept json
+// @Produce json
+// @Param room body RoomRequest true "Room details"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /rooms [post]
+func CreateRoom(c echo.Context) error {
+	var req RoomRequest
+	if err := c.Bind(&req); err != nil {
+		// error jika format request tidak sesuai
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
+	}
+
+	// validasi tipe dan kapasitas ruangan
+	if req.Type != "small" && req.Type != "medium" && req.Type != "large" || req.Capacity <= 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "room type is not valid / capacity must be larger more than 0",
+		})
+	}
+
+	query := `
+        INSERT INTO rooms (name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+    `
+	_, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL)
+	if err != nil {
+		log.Println("CreateRoom DB insert error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	return c.JSON(http.StatusCreated, echo.Map{"message": "room created successfully"})
+}
+
+// (GET /rooms) - List ruangan
+// GetRooms godoc
+// @Summary Get a list of rooms
+// @Description Get a list of rooms
+// @Tags Room
+// @Produce json
+// @Param name query string false "Room name"
+// @Param type query string false "Room type"
+// @Param capacity query string false "Room capacity"
+// @Param page query int false "Page number"
+// @Param pageSize query int false "Page size"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /rooms [get]
+func GetRooms(c echo.Context) error {
+	name := c.QueryParam("name")
+	roomType := c.QueryParam("type")
+	capacityParam := c.QueryParam("capacity")
+	pageParam := c.QueryParam("page")
+	pageSizeParam := c.QueryParam("pageSize")
+
+	// validasi tipe ruangan
+	if roomType != "" && roomType != "small" && roomType != "medium" && roomType != "large" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "room type is not valid"})
+	}
+
+	page := 1
+	pageSize := 10
+	if p, err := strconv.Atoi(pageParam); err == nil && p > 0 {
+		page = p
+	}
+	if ps, err := strconv.Atoi(pageSizeParam); err == nil && ps > 0 {
+		pageSize = ps
+	}
+	offset := (page - 1) * pageSize
+
+	query := `
+        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
+        FROM rooms
+        WHERE 1=1
+    `
+	var args []interface{}
+	argIndex := 1
+
+	if name != "" {
+		query += fmt.Sprintf(" AND LOWER(name) LIKE LOWER($%d)", argIndex)
+		args = append(args, "%"+name+"%")
+		argIndex++
+	}
+	if roomType != "" {
+		query += fmt.Sprintf(" AND room_type = $%d", argIndex)
+		args = append(args, roomType)
+		argIndex++
+	}
+	if capacityParam != "" {
+		if capVal, err := strconv.Atoi(capacityParam); err == nil {
+			query += fmt.Sprintf(" AND capacity >= $%d", argIndex)
+			args = append(args, capVal)
+			argIndex++
+		}
+	}
+
+	countQuery := "SELECT COUNT(*) FROM (" + query + ") AS total"
+	var totalData int
+	err := db.QueryRow(countQuery, args...).Scan(&totalData)
+	if err != nil {
+		log.Println("Count query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	query += fmt.Sprintf(" ORDER BY id ASC LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
+	args = append(args, pageSize, offset)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		log.Println("GetRooms query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+	defer rows.Close()
+
+	var rooms []Room
+	for rows.Next() {
+		var r Room
+		if err := rows.Scan(&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour, &r.PictureURL, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			log.Println("GetRooms scan error:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+		rooms = append(rooms, r)
+	}
+
+	totalPage := (totalData + pageSize - 1) / pageSize
+	return c.JSON(http.StatusOK, echo.Map{
+		"message":   "success",
+		"data":      rooms,
+		"page":      page,
+		"pageSize":  pageSize,
+		"totalPage": totalPage,
+		"totalData": totalData,
+	})
+}
+
+// (GET /rooms/:id) - Detail ruangan
+// GetRoomByID godoc
+// @Summary Get a room by ID
+// @Description Get a room by ID
+// @Tags Room
+// @Produce json
+// @Param id path string true "Room ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /rooms/{id} [get]
+func GetRoomByID(c echo.Context) error {
+	idParam := c.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
+	}
+
+	query := `
+        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
+        FROM rooms WHERE id = $1
+    `
+	var r Room
+	err = db.QueryRow(query, id).Scan(
+		&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour,
+		&r.PictureURL, &r.CreatedAt, &r.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
+	} else if err != nil {
+		log.Println("GetRoomByID DB error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "success",
+		"data":    r,
+	})
+}
+
+// (PUT /rooms/:id) - Update ruangan
+// UpdateRoom godoc
+// @Summary Update a room by ID
+// @Description Update a room by ID
+// @Tags Room
+// @Accept json
+// @Produce json
+// @Param id path string true "Room ID"
+// @Param room body main.RoomRequest true "Room details"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /rooms/{id} [put]
+func UpdateRoom(c echo.Context) error {
+	idParam := c.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
+	}
+
+	var req RoomRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
+	}
+
+	if req.Type != "small" && req.Type != "medium" && req.Type != "large" || req.Capacity <= 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "room type is not valid / capacity must be larger more than 0",
+		})
+	}
+
+	query := `
+        UPDATE rooms 
+        SET name=$1, room_type=$2, capacity=$3, price_per_hour=$4, picture_url=$5, updated_at=NOW()
+        WHERE id=$6
+    `
+	res, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL, id)
+	if err != nil {
+		log.Println("UpdateRoom DB error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "room updated successfully"})
+}
+
+// (DELETE /rooms/:id) - Hapus ruangan
+// DeleteRoom godoc
+// @Summary Delete a room by ID
+// @Description Delete a room by ID
+// @Tags Room
+// @Produce json
+// @Param id path string true "Room ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /rooms/{id} [delete]
+func DeleteRoom(c echo.Context) error {
+	idParam := c.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
+	}
+
+	query := `DELETE FROM rooms WHERE id=$1`
+	res, err := db.Exec(query, id)
+	if err != nil {
+		log.Println("DeleteRoom DB error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	rowsAffected, _ := res.RowsAffected()
+	if rowsAffected == 0 {
+		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "delete room success"})
+}
+
+// (GET /snacks) - List snack
+// GetSnacks godoc
+// @Summary Get all snacks
+// @Description Get all snacks
+// @Tags Snack
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /snacks [get]
+func GetSnacks(c echo.Context) error {
+	rows, err := db.Query(`SELECT id, name, unit, price, category FROM snacks ORDER BY id ASC`)
+	if err != nil {
+		log.Println("DB query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+	defer rows.Close()
+
+	var snacks []Snack
+	for rows.Next() {
+		var s Snack
+		if err := rows.Scan(&s.ID, &s.Name, &s.Unit, &s.Price, &s.Category); err != nil {
+			log.Println("Scan error:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+		snacks = append(snacks, s)
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "success",
+		"data":    snacks,
+	})
+}
+
+// (GET /reservation/calculation)
+// GetReservationCalculation godoc
+// @Summary Get reservation calculation
+// @Description Get reservation calculation
+// @Tags Reservation
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /reservation/calculation [get]
+// func CalculateReservation(c echo.Context) error {
+// 	//ambil query data dari parameter request URL
+// 	roomID := c.QueryParam("room_id")
+// 	snackID := c.QueryParam("snack_id")
+// 	startTime := c.QueryParam("startTime")
+// 	endTime := c.QueryParam("endTime")
+// 	participant := c.QueryParam("participant")
+// 	userID := c.QueryParam("user_id")
+// 	name := c.QueryParam("name")
+// 	phoneNumber := c.QueryParam("phoneNumber")
+// 	company := c.QueryParam("company")
+
+// 	//validasi parameter wajib
+// 	if roomID == "" || startTime == "" || endTime == "" {
+// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "missing required parameters"})
+// 	}
+
+// 	//unauthorized
+// 	if userID == "" || name == "" || phoneNumber == "" || company == "" {
+// 		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "unauthorized"})
+// 	}
+
+// 	// --- Konversi angka dan waktu ---
+// 	roomIDInt, err := strconv.Atoi(roomID)
+// 	if err != nil {
+// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room_id"})
+// 	}
+
+// 	snackIDInt := 0
+// 	if snackID != "" {
+// 		snackIDInt, err = strconv.Atoi(snackID)
+// 		if err != nil {
+// 			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid snack_id"})
+// 		}
+// 	}
+
+// 	participantInt, err := strconv.Atoi(participant)
+// 	if err != nil {
+// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid participant"})
+// 	}
+
+// 	start, err := time.Parse(time.RFC3339, startTime)
+// 	if err != nil {
+// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid startTime format (use RFC3339)"})
+// 	}
+
+// 	end, err := time.Parse(time.RFC3339, endTime)
+// 	if err != nil {
+// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid endTime format (use RFC3339)"})
+// 	}
+
+// 	if !end.After(start) {
+// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "endTime must be after startTime"})
+// 	}
+
+// 	durationMinutes := int(end.Sub(start).Minutes())
+
+// 	// ambil 
+
+// }
