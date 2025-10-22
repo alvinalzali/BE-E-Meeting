@@ -27,6 +27,19 @@ definitions:
     required:
     - email
     type: object
+  main.RoomRequest:
+    properties:
+      capacity:
+        type: integer
+      imageURL:
+        type: string
+      name:
+        type: string
+      pricePerHour:
+        type: number
+      type:
+        type: string
+    type: object
   main.User:
     properties:
       email:
@@ -57,8 +70,6 @@ definitions:
         type: string
       name:
         type: string
-      password:
-        type: string
       role:
         enum:
         - admin
@@ -68,6 +79,8 @@ definitions:
         enum:
         - active
         - inactive
+        type: string
+      updatedAt:
         type: string
       username:
         type: string
@@ -232,6 +245,261 @@ paths:
       summary: Register a new user
       tags:
       - User
+  /rooms:
+    get:
+      description: Get a list of rooms
+      parameters:
+      - description: Room name
+        in: query
+        name: name
+        type: string
+      - description: Room type
+        in: query
+        name: type
+        type: string
+      - description: Room capacity
+        in: query
+        name: capacity
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: pageSize
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get a list of rooms
+      tags:
+      - Room
+    post:
+      consumes:
+      - application/json
+      description: Create a new room
+      parameters:
+      - description: Room details
+        in: body
+        name: room
+        required: true
+        schema:
+          $ref: '#/definitions/main.RoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a new room
+      tags:
+      - Room
+  /rooms/{id}:
+    delete:
+      description: Delete a room by ID
+      parameters:
+      - description: Room ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete a room by ID
+      tags:
+      - Room
+    get:
+      description: Get a room by ID
+      parameters:
+      - description: Room ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get a room by ID
+      tags:
+      - Room
+    put:
+      consumes:
+      - application/json
+      description: Update a room by ID
+      parameters:
+      - description: Room ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Room details
+        in: body
+        name: room
+        required: true
+        schema:
+          $ref: '#/definitions/main.RoomRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update a room by ID
+      tags:
+      - Room
+  /save-image:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Save an image
+      parameters:
+      - description: Image file
+        in: formData
+        name: image
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Save an image
+      tags:
+      - Image
+  /snacks:
+    get:
+      description: Get all snacks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all snacks
+      tags:
+      - Snack
   /users/{id}:
     get:
       consumes:
@@ -277,7 +545,7 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update user details by user ID require authentication from header
+      description: Update user details by user ID
       parameters:
       - description: User ID
         in: path
@@ -296,11 +564,16 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
+            additionalProperties: true
             type: object
         "400":
           description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
           schema:
             additionalProperties:
               type: string
