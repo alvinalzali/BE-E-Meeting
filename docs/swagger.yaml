@@ -192,6 +192,84 @@ paths:
       summary: Register a new user
       tags:
       - User
+  /reservation/calculation:
+    get:
+      description: Calculate reservation
+      parameters:
+      - description: Room ID
+        in: query
+        name: room_id
+        required: true
+        type: string
+      - description: Snack ID
+        in: query
+        name: snack_id
+        required: true
+        type: string
+      - description: Start Time
+        in: query
+        name: startTime
+        required: true
+        type: string
+      - description: End Time
+        in: query
+        name: endTime
+        required: true
+        type: string
+      - description: Participant
+        in: query
+        name: participant
+        required: true
+        type: string
+      - description: User ID
+        in: query
+        name: user_id
+        required: true
+        type: string
+      - description: Name
+        in: query
+        name: name
+        required: true
+        type: string
+      - description: Phone Number
+        in: query
+        name: phoneNumber
+        required: true
+        type: string
+      - description: Company
+        in: query
+        name: company
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Calculate reservation
+      tags:
+      - Reservation
   /rooms:
     get:
       description: Get a list of rooms

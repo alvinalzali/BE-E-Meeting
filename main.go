@@ -999,71 +999,179 @@ func GetSnacks(c echo.Context) error {
 }
 
 // (GET /reservation/calculation)
-// GetReservationCalculation godoc
-// @Summary Get reservation calculation
-// @Description Get reservation calculation
+// CalculateReservation godoc
+// @Summary Calculate reservation
+// @Description Calculate reservation
 // @Tags Reservation
 // @Produce json
+// @Param room_id query string true "Room ID"
+// @Param snack_id query string true "Snack ID"
+// @Param startTime query string true "Start Time"
+// @Param endTime query string true "End Time"
+// @Param participant query string true "Participant"
+// @Param user_id query string true "User ID"
+// @Param name query string true "Name"
+// @Param phoneNumber query string true "Phone Number"
+// @Param company query string true "Company"
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /reservation/calculation [get]
-// func CalculateReservation(c echo.Context) error {
-// 	//ambil query data dari parameter request URL
-// 	roomID := c.QueryParam("room_id")
-// 	snackID := c.QueryParam("snack_id")
-// 	startTime := c.QueryParam("startTime")
-// 	endTime := c.QueryParam("endTime")
-// 	participant := c.QueryParam("participant")
-// 	userID := c.QueryParam("user_id")
-// 	name := c.QueryParam("name")
-// 	phoneNumber := c.QueryParam("phoneNumber")
-// 	company := c.QueryParam("company")
+func CalculateReservation(c echo.Context) error {
+	//ambil query data dari parameter request URL
+	roomID, _ := strconv.Atoi(c.QueryParam("room_id"))
+	snackID, _ := strconv.Atoi(c.QueryParam("snack_id"))
+	startTimeStr := c.QueryParam("startTime")
+	endTimeStr := c.QueryParam("endTime")
+	participant, _ := strconv.Atoi(c.QueryParam("participant"))
+	userID := c.QueryParam("user_id")
+	name := c.QueryParam("name")
+	phoneNumber := c.QueryParam("phoneNumber")
+	company := c.QueryParam("company")
 
-// 	//validasi parameter wajib
-// 	if roomID == "" || startTime == "" || endTime == "" {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "missing required parameters"})
-// 	}
+	// --- Validasi awal ---
+	if roomID == 0 || startTimeStr == "" || endTimeStr == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": "missing required parameters",
+		})
+	}
 
-// 	//unauthorized
-// 	if userID == "" || name == "" || phoneNumber == "" || company == "" {
-// 		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "unauthorized"})
-// 	}
+	startTime, err := time.Parse(time.RFC3339, startTimeStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": "invalid startTime format (must be RFC3339)",
+		})
+	}
+	endTime, err := time.Parse(time.RFC3339, endTimeStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": "invalid endTime format (must be RFC3339)",
+		})
+	}
 
-// 	// --- Konversi angka dan waktu ---
-// 	roomIDInt, err := strconv.Atoi(roomID)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room_id"})
-// 	}
+	// --- Ambil data room ---
+	var (
+		roomName     string
+		roomType     string
+		roomCapacity int
+		pricePerHour float64
+		roomImageURL sql.NullString
+	)
 
-// 	snackIDInt := 0
-// 	if snackID != "" {
-// 		snackIDInt, err = strconv.Atoi(snackID)
-// 		if err != nil {
-// 			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid snack_id"})
-// 		}
-// 	}
+	err = db.QueryRow(`
+		SELECT name, room_type, capacity, price_per_hour, picture_url
+		FROM rooms WHERE id = $1
+	`, roomID).Scan(&roomName, &roomType, &roomCapacity, &pricePerHour, &roomImageURL)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "room not found"})
+	}
 
-// 	participantInt, err := strconv.Atoi(participant)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid participant"})
-// 	}
+	// --- Ambil data snack ---
+	var (
+		snackName     string
+		snackUnit     string
+		snackPrice    float64
+		snackCategory string
+	)
 
-// 	start, err := time.Parse(time.RFC3339, startTime)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid startTime format (use RFC3339)"})
-// 	}
+	err = db.QueryRow(`
+		SELECT name, unit, price, category
+		FROM snacks WHERE id = $1
+	`, snackID).Scan(&snackName, &snackUnit, &snackPrice, &snackCategory)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "snack not found"})
+	}
 
-// 	end, err := time.Parse(time.RFC3339, endTime)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid endTime format (use RFC3339)"})
-// 	}
+	// --- Cek booking bentrok ---
+	var existing int
+	err = db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM reservation_details 
+		WHERE room_id = $1
+		AND (
+			(start_at, end_at) OVERLAPS ($2, $3)
+		)
+	`, roomID, startTime, endTime).Scan(&existing)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	}
+	if existing > 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": "booking bentrok",
+		})
+	}
 
-// 	if !end.After(start) {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "endTime must be after startTime"})
-// 	}
+	// hitung durasi dan total penginapan (minutes)
+	durationMinutes := int(endTime.Sub(startTime).Minutes())
+	durationHours := float64(durationMinutes) / 60.0
 
-// 	durationMinutes := int(end.Sub(start).Minutes())
+	subTotalRoom := pricePerHour * durationHours
+	subTotalSnack := snackPrice * float64(participant)
+	total := subTotalRoom + subTotalSnack
 
-// 	// ambil 
+	// --- Simpan ke tabel reservations ---
+	query := `
+		INSERT INTO reservations (
+			user_id, contact_name, contact_phone, contact_company,
+			duration_minute, total_participants,
+			subtotal_snack, subtotal_room, total,
+			status_reservation, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'booked', NOW(), NOW())
+		RETURNING id
+		`
 
-// }
+	var reservationID int
+	err = db.QueryRow(
+		query,
+		userID, name, phoneNumber, company,
+		durationMinutes, participant,
+		subTotalSnack, subTotalRoom, total,
+	).Scan(&reservationID)
+	if err != nil {
+		log.Println("Error inserting reservation:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"message": "failed to save reservation",
+		})
+	}
+
+	// ---  response ---
+	response := map[string]interface{}{
+		"message": "success",
+		"data": map[string]interface{}{
+			"rooms": []map[string]interface{}{
+				{
+					"name":          roomName,
+					"pricePerHour":  pricePerHour,
+					"imageURL":      roomImageURL.String,
+					"capacity":      roomCapacity,
+					"type":          roomType,
+					"subTotalSnack": subTotalSnack,
+					"subTotalRoom":  subTotalRoom,
+					"startTime":     startTime,
+					"endTime":       endTime,
+					"duration":      durationMinutes,
+					"participant":   participant,
+					"snack": map[string]interface{}{
+						"id":       snackID,
+						"name":     snackName,
+						"unit":     snackUnit,
+						"price":    snackPrice,
+						"category": snackCategory,
+					},
+				},
+			},
+			"personalData": map[string]interface{}{
+				"name":        name,
+				"phoneNumber": phoneNumber,
+				"company":     company,
+			},
+			"subTotalRoom":  subTotalRoom,
+			"subTotalSnack": subTotalSnack,
+			"total":         total,
+		},
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
