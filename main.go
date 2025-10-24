@@ -116,6 +116,23 @@ type Snack struct {
 	Category string  `json:"category"`
 }
 
+type RoomReservationRequest struct {
+	ID          int       `json:"id"`
+	StartTime   time.Time `json:"startTime"`
+	EndTime     time.Time `json:"endTime"`
+	Participant int       `json:"participant"`
+	SnackID     int       `json:"snackID"`
+}
+
+type ReservationRequestBody struct {
+	UserID      int                      `json:"userID"`
+	Name        string                   `json:"name"`
+	PhoneNumber string                   `json:"phoneNumber"`
+	Company     string                   `json:"company"`
+	Notes       string                   `json:"notes"`
+	Rooms       []RoomReservationRequest `json:"rooms"`
+}
+
 var BaseURL string = "http://localhost:8080"
 var ImageURL string
 var db *sql.DB
@@ -174,6 +191,7 @@ func main() {
 
 	// route for reservations
 	e.GET("/reservation/calculation", CalculateReservation)
+	e.POST("/reservation", CreateReservation)
 
 	// route group users
 	userGroup := e.Group("/users")
@@ -1174,4 +1192,153 @@ func CalculateReservation(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, response)
+}
+
+// (PUT /reservation)
+// CreateReservation godoc
+// @Summary Create a new reservation
+// @Description Create a new reservation
+// @Tags Reservation
+// @Accept json
+// @Produce json
+// @Param request body ReservationRequestBody true "Reservation request body"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /reservation [post]
+func CreateReservation(c echo.Context) error {
+	var req ReservationRequestBody
+
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
+	}
+
+	// validasi
+	if req.UserID <= 0 || req.Name == "" || req.PhoneNumber == "" || req.Company == "" || req.Notes == "" || len(req.Rooms) == 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
+	}
+
+	// --- Cek booking bentrok ---
+	for _, room := range req.Rooms {
+		var existing int
+		err := db.QueryRow(`
+			SELECT COUNT(*)
+			FROM reservation_details
+			WHERE room_id = $1
+			AND (
+				(start_at, end_at) OVERLAPS ($2, $3)
+			)
+		`, room.ID, room.StartTime, room.EndTime).Scan(&existing)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error 1"})
+		}
+		if existing > 0 {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"message": "Room has been booked",
+			})
+		}
+	}
+
+	// --- Simpan ke tabel reservations ---
+	query := `
+		INSERT INTO reservations (
+			user_id, contact_name, contact_phone, contact_company,
+			note, status_reservation, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, 'booked', NOW(), NOW())
+		RETURNING id
+		`
+
+	var reservationID int
+	err := db.QueryRow(
+		query,
+		req.UserID, req.Name, req.PhoneNumber, req.Company,
+		req.Notes,
+	).Scan(&reservationID)
+	if err != nil {
+		log.Println("Error inserting reservation:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"message": "Internal server error 2",
+		})
+	}
+
+	// // ambil nilai data dari tabel room berdasrakan Rooms.ID
+	query = `
+		Select id, name, room_type, capacity, price_per_hour, image_url, created_at, updated_at
+		FROM rooms
+		WHERE id = $1
+		`
+
+	var roomTable Room
+	err = db.QueryRow(query, strconv.Itoa(req.Rooms[0].ID)).Scan(
+		&roomTable.ID,
+		&roomTable.Name,
+		&roomTable.RoomType,
+		&roomTable.Capacity,
+		&roomTable.PricePerHour,
+		&roomTable.PictureURL,
+		&roomTable.CreatedAt,
+		&roomTable.UpdatedAt,
+	)
+
+	// ambil nilai data dari tabel snack berdasrakan Rooms.SnackID
+	query = `
+		Select id, name, unit, price, category
+		FROM snacks
+		WHERE id = $1
+		`
+
+	var snackTable Snack
+	err = db.QueryRow(query, strconv.Itoa(req.Rooms[0].SnackID)).Scan(
+
+		&snackTable.ID,
+		&snackTable.Name,
+		&snackTable.Unit,
+		&snackTable.Price,
+		&snackTable.Category,
+	)
+
+	//simpan data ke ReservationDetail
+	//--- Simpan ke tabel reservation_details
+	query = `
+		INSERT INTO reservation_details (
+			reservation_id,
+			room_id, room_name, room_price,
+			snack_id, snack_name, snack_price,
+			start_at, end_at, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+		`
+
+	for _, room := range req.Rooms {
+		_, err := db.Exec(
+			query,
+			reservationID,
+			room.ID, roomTable.Name, roomTable.PricePerHour,
+			room.SnackID, snackTable.Name, snackTable.Price,
+			room.StartTime, room.EndTime,
+		)
+		if err != nil {
+			log.Println("Error inserting reservation details:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"message": "Internal server error 3",
+			})
+		}
+	}
+
+	//masukan req ke variabel output untuk dimasukan ke return
+	// return c.JSON(http.StatusOK, map[string]interface{}{
+	// 	"message": "Reservation created successfully",
+	// 	"req":     req,
+	// })
+
+	snackid := strconv.Itoa(req.Rooms[0].SnackID) //.req.Rooms[0].SnackID
+	tableid := strconv.Itoa(req.Rooms[0].ID)      //req.Rooms[0].ID
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"message":    "Reservation created successfully",
+		"roomTable":  tableid,
+		"snackTable": snackid,
+	})
+
 }

@@ -185,6 +185,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/reservation": {
+            "post": {
+                "description": "Create a new reservation",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reservation"
+                ],
+                "summary": "Create a new reservation",
+                "parameters": [
+                    {
+                        "description": "Reservation request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.ReservationRequestBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/reservation/calculation": {
             "get": {
                 "description": "Calculate reservation",
@@ -834,6 +887,32 @@ const docTemplate = `{
                 }
             }
         },
+        "main.ReservationRequestBody": {
+            "type": "object",
+            "properties": {
+                "company": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "phoneNumber": {
+                    "type": "string"
+                },
+                "rooms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/main.RoomReservationRequest"
+                    }
+                },
+                "userID": {
+                    "type": "integer"
+                }
+            }
+        },
         "main.ResetRequest": {
             "type": "object",
             "required": [
@@ -861,6 +940,26 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "main.RoomReservationRequest": {
+            "type": "object",
+            "properties": {
+                "endTime": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "participant": {
+                    "type": "integer"
+                },
+                "snackID": {
+                    "type": "integer"
+                },
+                "startTime": {
                     "type": "string"
                 }
             }

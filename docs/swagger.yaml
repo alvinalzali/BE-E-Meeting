@@ -9,6 +9,23 @@ definitions:
     - confirm_password
     - new_password
     type: object
+  main.ReservationRequestBody:
+    properties:
+      company:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      phoneNumber:
+        type: string
+      rooms:
+        items:
+          $ref: '#/definitions/main.RoomReservationRequest'
+        type: array
+      userID:
+        type: integer
+    type: object
   main.ResetRequest:
     properties:
       email:
@@ -27,6 +44,19 @@ definitions:
       pricePerHour:
         type: number
       type:
+        type: string
+    type: object
+  main.RoomReservationRequest:
+    properties:
+      endTime:
+        type: string
+      id:
+        type: integer
+      participant:
+        type: integer
+      snackID:
+        type: integer
+      startTime:
         type: string
     type: object
   main.User:
@@ -192,6 +222,41 @@ paths:
       summary: Register a new user
       tags:
       - User
+  /reservation:
+    post:
+      consumes:
+      - application/json
+      description: Create a new reservation
+      parameters:
+      - description: Reservation request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ReservationRequestBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a new reservation
+      tags:
+      - Reservation
   /reservation/calculation:
     get:
       description: Calculate reservation
