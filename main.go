@@ -1342,3 +1342,208 @@ func CreateReservation(c echo.Context) error {
 	})
 
 }
+
+func HistoryReservation(c echo.Context) error {
+	startDateStr := c.QueryParam("startDate")
+	endDateStr := c.QueryParam("endDate")
+	roomType := c.QueryParam("roomType")
+	status := c.QueryParam("status")
+
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page < 1 {
+		page = 1
+	}
+
+	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
+	offset := (page - 1) * pageSize
+
+	// validasi room type
+	validTypes := map[string]bool{
+		"small":  true,
+		"medium": true,
+		"large":  true,
+	}
+	if _, ok := validTypes[roomType]; !ok {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": "Invalid room type",
+		})
+	}
+
+	// Query utama
+	query := ` 
+		SELECT
+			reservations.id,
+			reservations.contact_name,
+			reservations.contact_phone,
+			reservations.contact_company,
+			reservations.subtotal_snack,
+			reservations.subtotal_room,
+			reservations.total,
+			reservations.status_reservation,
+			reservations.created_at,
+			reservations.updated_at,
+		FROM
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argIndex := 1
+
+	if startDateStr != "" {
+		query += fmt.Sprintf(" AND reservations.created_at >= $%d", argIndex)
+		args = append(args, startDateStr)
+		argIndex++
+	}
+
+	if endDateStr != "" {
+		query += fmt.Sprintf(" AND reservations.created_at <= $%d", argIndex)
+		args = append(args, endDateStr)
+		argIndex++
+	}
+
+	if roomType != "" {
+		query += fmt.Sprintf(" AND reservations.room_type = $%d", argIndex)
+		args = append(args, roomType)
+		argIndex++
+	}
+
+	if status != "" {
+		query += fmt.Sprintf(" AND reservations.status_reservation = $%d", argIndex)
+		args = append(args, status)
+		argIndex++
+	}
+
+	query += " ORDER BY reservations.created_at DESC LIMIT $%d OFFSET $%d"
+	args = append(args, pageSize, offset)
+	query = fmt.Sprintf(query, argIndex, argIndex+1)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		log.Println("DB query error:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"message": "Internal server error",
+		})
+	}
+	defer rows.Close()
+
+	var histories []map[string]interface{}
+
+	for rows.Next() {
+		var (
+			id                int
+			contactName       string
+			contactPhone      string
+			contactCompany    string
+			subtotalSnack     float64
+			subtotalRoom      float64
+			total             float64
+			statusReservation string
+			createdAt         time.Time
+			updatedAt         time.Time
+		)
+		if err := rows.Scan(
+			&id,
+			&contactName,
+			&contactPhone,
+			&contactCompany,
+			&subtotalSnack,
+			&subtotalRoom,
+			&total,
+			&statusReservation,
+			&createdAt,
+			&updatedAt,
+		); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"message": "Internal server error",
+			})
+		}
+	}
+
+	// ambil detail room dari reservation_details
+	roomQuery := `
+		SELECT
+			reservation_details.room_id,
+			reservation_details.room_price,
+			reservation_details.room_name,
+			reservation_details.room_type,
+			reservation_details.total_room,
+			reservation_details.total_snack
+		FROM
+			reservation_details JOIN reservations ON reservation_details.reservation_id = reservations.id
+		WHERE
+			reservations.id = $1
+	`
+	roomRows, err := db.Query(roomQuery, id)
+	if err != nil {
+		log.Println("DB query error:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"message": "Internal server error",
+		})
+	}
+	defer roomRows.Close()
+
+	var rooms []map[string]interface{}
+	for roomRows.Next() {
+		var (
+			roomID     int
+			roomPrice  float64
+			roomName   string
+			roomType   string
+			totalRoom  int
+			totalSnack int
+		)
+		if err := roomRows.Scan(
+			&roomID,
+			&roomPrice,
+			&roomName,
+			&roomType,
+			&totalRoom,
+			&totalSnack,
+		); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"message": "Internal server error",
+			})
+		}
+		rooms = append(rooms, map[string]interface{}{
+			"room_id":     roomID,
+			"room_price":  roomPrice,
+			"room_name":   roomName,
+			"room_type":   roomType,
+			"total_room":  totalRoom,
+			"total_snack": totalSnack,
+		})
+	}
+
+	histories = append(histories, map[string]interface{}{
+		"id":                 id,
+		"contact_name":       contactName,
+		"contact_phone":      contactPhone,
+		"contact_company":    contactCompany,
+		"subtotal_snack":     subtotalSnack,
+		"subtotal_room":      subtotalRoom,
+		"total":              total,
+		"status_reservation": statusReservation,
+		"created_at":         createdAt,
+		"updated_at":         updatedAt,
+		"rooms":              rooms,
+	})
+
+	// hitung total data
+	var totalData int
+	if err := db.QueryRow("SELECT COUNT(*) FROM reservations").Scan(&totalData); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"message": "Internal server error",
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message":   "Success",
+		"data":      histories,
+		"page":      page,
+		"pageSize":  pageSize,
+		"totalData": totalData,
+	})
+}
