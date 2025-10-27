@@ -116,6 +116,63 @@ type Snack struct {
 	Category string  `json:"category"`
 }
 
+// Response models untuk GetReservationByID
+type SnackInfo struct {
+	ID       int     `json:"id"`
+	Name     string  `json:"name"`
+	Unit     string  `json:"unit"`
+	Price    float64 `json:"price"`
+	Category string  `json:"category"`
+}
+
+type RoomInfo struct {
+	Name         string     `json:"name"`
+	PricePerHour float64    `json:"pricePerHour"`
+	ImageURL     string     `json:"imageURL"`
+	Capacity     int        `json:"capacity"`
+	Type         string     `json:"type"`
+	TotalSnack   float64    `json:"totalSnack"`
+	TotalRoom    float64    `json:"totalRoom"`
+	StartTime    string     `json:"startTime"`
+	EndTime      string     `json:"endTime"`
+	Duration     int        `json:"duration"`
+	Participant  int        `json:"participant"`
+	Snack        *SnackInfo `json:"snack,omitempty"`
+}
+
+type PersonalData struct {
+	Name        string `json:"name"`
+	PhoneNumber string `json:"phoneNumber"`
+	Company     string `json:"company"`
+}
+
+// Response types untuk GetReservationByID
+type ReservationByIDResponse struct {
+	Message string              `json:"message"`
+	Data    ReservationByIDData `json:"data"`
+}
+
+type ReservationByIDData struct {
+	Rooms         []RoomInfo   `json:"rooms"`
+	PersonalData  PersonalData `json:"personalData"`
+	SubTotalSnack float64      `json:"subTotalSnack"`
+	SubTotalRoom  float64      `json:"subTotalRoom"`
+	Total         float64      `json:"total"`
+}
+
+type UpdateReservationRequest struct {
+	ReservationID int    `json:"reservation_id" validate:"required"`
+	Status        string `json:"status" validate:"required,oneof=booked canceled paid"`
+}
+
+type UpdateStatuOnlyRequest struct {
+	Status string `json:"status" validate:"required,oneof=booked canceled paid"`
+}
+
+type SimpleMessageResponse struct {
+	Message string `json:"message"`
+}
+
 var BaseURL string = "http://localhost:8080"
 var ImageURL string
 var db *sql.DB
@@ -125,7 +182,7 @@ var DefaultAvatar string = BaseURL + "/assets/default/img/default_profile.jpg"
 // @title E-Meeting API
 // @version 1.0
 // @description This is a sample server for E-Meeting.
-// @termsOfService http://swagger.io/terms/
+// @termsOfService http://si wagger.io/terms/
 
 // @securityDefinitions.apikey  BearerAuth
 // @in                          header
@@ -164,16 +221,19 @@ func main() {
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
 	e.POST("/uploads", UploadImage)
 
-	// route for rooms
-	e.POST("/rooms", CreateRoom)
-	e.GET("/rooms", GetRooms)
-	e.GET("/rooms/:id", GetRoomByID)
-	e.PUT("/rooms/:id", UpdateRoom)
-	e.DELETE("/rooms/:id", DeleteRoom)
-	e.GET("/snacks", GetSnacks)
+	// route for reservation
+	e.GET("/reservation/:id", GetReservationByID, middlewareAuth)
+	e.PATCH("/reservation/status", UpdateReservationStatus, middlewareAuth)
 
-	// route for reservations
-	// e.GET("/reservation/calculation", CalculateReservation)
+	// route for rooms dengan auth sesuai kontrak
+	e.POST("/rooms", CreateRoom, middlewareAuth)
+	e.GET("/rooms", GetRooms, middlewareAuth)
+	e.GET("/rooms/:id", GetRoomByID, middlewareAuth)
+	e.PUT("/rooms/:id", UpdateRoom, middlewareAuth)
+	e.DELETE("/rooms/:id", DeleteRoom, middlewareAuth)
+
+	// route for snacks dengan auth sesuai kontrak
+	e.GET("/snacks", GetSnacks, middlewareAuth)
 
 	// route group users
 	userGroup := e.Group("/users")
@@ -709,6 +769,8 @@ func UploadImage(c echo.Context) error {
 	})
 }
 
+//Reservation_ID
+
 // (POST /rooms) - Tambah ruangan baru
 // CreateRoom godoc
 // @Summary Create a new room
@@ -849,6 +911,8 @@ func GetRooms(c echo.Context) error {
 		}
 		if updated.Valid {
 			r.UpdatedAt = updated.Time.Format(time.RFC3339)
+		} else {
+			r.UpdatedAt = r.CreatedAt
 		}
 
 		rooms = append(rooms, r)
@@ -994,7 +1058,7 @@ func DeleteRoom(c echo.Context) error {
 	idParam := c.Param("id")
 	id, err := strconv.Atoi(idParam)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room"})
 	}
 
 	query := `DELETE FROM rooms WHERE id=$1`
@@ -1114,3 +1178,322 @@ func GetSnacks(c echo.Context) error {
 // 	// ambil
 
 // }
+
+// GetReservationByID godoc
+// @Summary Detail reservation by ID
+// @Description Get full reservation detail (master + reservation details) by reservation ID
+// @Tags Reservation
+// @Produce json
+// @Param id path int true "Reservation ID"
+// @Success 200 {object} ReservationByIDResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /reservation/{id} [get]
+func GetReservationByID(c echo.Context) error {
+	authHeader := c.Request().Header.Get("Authorization")
+	if authHeader == "" {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "unauthorized"})
+	}
+	token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
+		return JwtSecret, nil
+	})
+	if err != nil || !token.Valid {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "unauthorized"})
+	}
+
+	idParam := c.Param("id")
+	if idParam == "" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid reservation id"})
+	}
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid reservation id"})
+	}
+
+	var contactName, contactPhone, contactCompany sql.NullString
+	var subtotalSnack, subtotalRoom, total sql.NullFloat64
+
+	err = db.QueryRow(`
+        SELECT contact_name, contact_phone, contact_company, 
+               COALESCE(subtotal_snack, 0) as subtotal_snack, 
+               COALESCE(subtotal_room, 0) as subtotal_room, 
+               COALESCE(total, 0) as total
+        FROM reservations
+        WHERE id = $1
+    `, id).Scan(&contactName, &contactPhone, &contactCompany, &subtotalSnack, &subtotalRoom, &total)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusNotFound, echo.Map{"message": "url not found"})
+		}
+		log.Println("GetReservationByID master query:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	rows, err := db.Query(`
+        SELECT 
+            COALESCE(r.name, '') as room_name,
+            COALESCE(r.price_per_hour, 0) as price_per_hour,
+            COALESCE(r.picture_url, '') as image_url,
+            COALESCE(r.capacity, 0) as capacity,
+            COALESCE(r.room_type::text, 'small') as room_type,
+            COALESCE(rd.total_snack, 0) as total_snack,
+            COALESCE(rd.total_room, 0) as total_room,
+            rd.start_at,
+            rd.end_at,
+            COALESCE(rd.duration_minute, 0) as duration,
+            COALESCE(rd.total_participants, 0) as participant,
+            s.id as snack_id,
+            COALESCE(s.name, '') as snack_name,
+            COALESCE(s.unit::text, '') as snack_unit,  -- Cast enum to text
+            COALESCE(s.price, 0) as snack_price,
+            COALESCE(s.category::text, '') as snack_category  -- Cast enum to text if it's also an enum
+        FROM reservation_details rd
+        LEFT JOIN rooms r ON rd.room_id = r.id
+        LEFT JOIN snacks s ON rd.snack_id = s.id
+        WHERE rd.reservation_id = $1
+    `, id)
+	if err != nil {
+		log.Println("GetReservationByID details query:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+	defer rows.Close()
+
+	rooms := make([]RoomInfo, 0)
+	for rows.Next() {
+		var room RoomInfo
+		var snack SnackInfo
+		var startAt, endAt sql.NullTime
+
+		err := rows.Scan(
+			&room.Name, &room.PricePerHour, &room.ImageURL, &room.Capacity, &room.Type,
+			&room.TotalSnack, &room.TotalRoom, &startAt, &endAt, &room.Duration, &room.Participant,
+			&snack.ID, &snack.Name, &snack.Unit, &snack.Price, &snack.Category,
+		)
+		if err != nil {
+			log.Println("Scan error:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+
+		if startAt.Valid {
+			room.StartTime = startAt.Time.Format(time.RFC3339)
+		}
+		if endAt.Valid {
+			room.EndTime = endAt.Time.Format(time.RFC3339)
+		}
+
+		if snack.ID > 0 {
+			room.Snack = &snack
+		}
+
+		rooms = append(rooms, room)
+	}
+
+	log.Println("GetReservationByID rooms returned:", len(rooms))
+
+	response := ReservationByIDResponse{
+		Message: "success",
+		Data: ReservationByIDData{
+			Rooms: rooms,
+			PersonalData: PersonalData{
+				Name:        contactName.String,
+				PhoneNumber: contactPhone.String,
+				Company:     contactCompany.String,
+			},
+			SubTotalSnack: subtotalSnack.Float64,
+			SubTotalRoom:  subtotalRoom.Float64,
+			Total:         total.Float64,
+		},
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+type ScheduleEntry struct {
+	StartTime    string `json:"startTime"`
+	EndTime      string `json:"endTime"`
+	Status       string `json:"status"`
+	CompanyName  string `json:"companyName"`
+	Participants int    `json:"participants"`
+}
+
+type RoomScheduleResponse struct {
+	RoomName    string          `json:"roomName"`
+	Schedules   []ScheduleEntry `json:"schedules"`
+	TotalBooked int             `json:"totalBooked"`
+}
+
+// GetRoomReservationSchedule godoc
+// @Summary Get room reservation schedules
+// @Description Get reservations for a room in a date range
+// @Tags Reservation
+// @Produce json
+// @Param id path int true "Room ID"
+// @Param start_datetime query string true "Start datetime (RFC3339)"
+// @Param end_datetime query string true "End datetime (RFC3339)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /rooms/{id}/reservation [get]
+func GetRoomReservationSchedule(c echo.Context) error {
+	// parse room id
+	idParam := c.Param("id")
+	roomID, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
+	}
+
+	startStr := c.QueryParam("start_datetime")
+	endStr := c.QueryParam("end_datetime")
+	if startStr == "" || endStr == "" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "start_datetime and end_datetime are required"})
+	}
+	start, err := time.Parse(time.RFC3339, startStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid start_datetime format (use RFC3339)"})
+	}
+	end, err := time.Parse(time.RFC3339, endStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid end_datetime format (use RFC3339)"})
+	}
+	if !end.After(start) {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "end_datetime must be after start_datetime"})
+	}
+
+	var roomName sql.NullString
+	if err := db.QueryRow(`SELECT name FROM rooms WHERE id=$1`, roomID).Scan(&roomName); err != nil {
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
+		}
+		log.Println("DB error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	query := `
+        SELECT rd.start_at, rd.end_at, rd.total_participants, rv.contact_company, rv.status_reservation
+        FROM reservation_details rd
+        JOIN reservations rv ON rd.reservation_id = rv.id
+        WHERE rd.room_id = $1
+          AND NOT (rd.end_at <= $2 OR rd.start_at >= $3)
+        ORDER BY rd.start_at
+    `
+	rows, err := db.Query(query, roomID, start, end)
+	if err != nil {
+		log.Println("DB query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+	defer rows.Close()
+
+	var schedules []ScheduleEntry
+	for rows.Next() {
+		var sStart, sEnd sql.NullTime
+		var participants sql.NullInt64
+		var company sql.NullString
+		var status sql.NullString
+
+		if err := rows.Scan(&sStart, &sEnd, &participants, &company, &status); err != nil {
+			log.Println("Row scan error:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+
+		entry := ScheduleEntry{}
+		if sStart.Valid {
+			entry.StartTime = sStart.Time.Format(time.RFC3339)
+		}
+		if sEnd.Valid {
+			entry.EndTime = sEnd.Time.Format(time.RFC3339)
+		}
+		if participants.Valid {
+			entry.Participants = int(participants.Int64)
+		}
+		if company.Valid {
+			entry.CompanyName = company.String
+		}
+		if status.Valid {
+			entry.Status = status.String
+		}
+		schedules = append(schedules, entry)
+	}
+
+	resp := RoomScheduleResponse{
+		RoomName:    roomName.String,
+		Schedules:   schedules,
+		TotalBooked: len(schedules),
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "success", "data": resp})
+}
+
+// UpdateReservationStatus godoc
+// @Summary Update reservation status
+// @Description Update status of a reservation (booked/canceled/paid)
+// @Tags Reservation
+// @Accept json
+// @Produce json
+// @Param reservation_id query int false "Reservation ID (if not in body)"
+// @Param status body UpdateReservationStatusRequest true "Status update request"
+// @Success 200 {object} map[string]string "message: update status success"
+// @Failure 400 {object} map[string]string "message: bad request/reservation already canceled/paid"
+// @Failure 401 {object} map[string]string "message: unauthorized"
+// @Failure 404 {object} map[string]string "message: url not found"
+// @Failure 500 {object} map[string]string "message: internal server error"
+// @Router /reservation/status [patch]
+type UpdateReservattionStatusRequest struct {
+	ReservationID int    `json:"reservation_id"`
+	Status        string `json:"status"`
+}
+
+// Request untuk update status reservation (boleh kirim reservation_id di body atau pakai query param)
+type UpdateReservationStatusRequest struct {
+	ReservationID int    `json:"reservation_id,omitempty"`
+	Status        string `json:"status" validate:"required"`
+}
+
+func UpdateReservationStatus(c echo.Context) error {
+	var req UpdateReservationStatusRequest
+	// coba bind body JSON (jika ada)
+	_ = c.Bind(&req)
+	if req.ReservationID == 0 {
+		if idStr := c.QueryParam("reservation_id"); idStr != "" {
+			if idVal, err := strconv.Atoi(idStr); err == nil {
+				req.ReservationID = idVal
+			}
+		}
+	}
+
+	req.Status = strings.TrimSpace(req.Status)
+	if req.Status == "" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "bad request"})
+	}
+	if req.Status != "booked" && req.Status != "canceled" && req.Status != "paid" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "bad request"})
+	}
+	if req.ReservationID == 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "bad request"})
+	}
+
+	var currentStatus sql.NullString
+	err := db.QueryRow(`SELECT status_reservation FROM reservations WHERE id=$1`, req.ReservationID).Scan(&currentStatus)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusNotFound, echo.Map{"message": "url not found"})
+		}
+		log.Println("UpdateReservationStatus select error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	// jika sudah canceled atau paid, return 400 sesuai spesifikasi
+	if currentStatus.Valid && (currentStatus.String == "canceled" || currentStatus.String == "paid") {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "reservation already canceled/paid"})
+	}
+
+	_, err = db.Exec(`UPDATE reservations SET status_reservation=$1 WHERE id=$2`, req.Status, req.ReservationID)
+	if err != nil {
+		log.Println("UpdateReservationStatus update error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "update status success"})
+}
