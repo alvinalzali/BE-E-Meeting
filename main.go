@@ -1591,172 +1591,172 @@ func UpdateReservationStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, echo.Map{"message": "update status success"})
 }
 
-// // Add this handler function
-// // GetReservationSchedules godoc
-// // @Summary Get reservation schedules
-// // @Description Get all reservation schedules between date range with pagination
-// // @Tags Reservation
-// // @Accept json
-// // @Produce json
-// // @Param startDate query string true "Start date (YYYY-MM-DD)"
-// // @Param endDate query string true "End date (YYYY-MM-DD)"
-// // @Param page query int false "Page number (default: 1)"
-// // @Param pageSize query int false "Page size (default: 10)"
-// // @Success 200 {object} ScheduleResponse
-// // @Failure 400 {object} map[string]string
-// // @Failure 401 {object} map[string]string
-// // @Failure 404 {object} map[string]string
-// // @Failure 500 {object} map[string]string
-// // @Security BearerAuth
-// // @Router /reservations/schedules [get]
-// func GetReservationSchedules(c echo.Context) error {
-// 	// Parse date parameters
-// 	startDate := c.QueryParam("startDate")
-// 	endDate := c.QueryParam("endDate")
+// Add this handler function
+// GetReservationSchedules godoc
+// @Summary Get reservation schedules
+// @Description Get all reservation schedules between date range with pagination
+// @Tags Reservation
+// @Accept json
+// @Produce json
+// @Param startDate query string true "Start date (YYYY-MM-DD)"
+// @Param endDate query string true "End date (YYYY-MM-DD)"
+// @Param page query int false "Page number (default: 1)"
+// @Param pageSize query int false "Page size (default: 10)"
+// @Success 200 {object} ScheduleResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security BearerAuth
+// @Router /reservations/schedules [get]
+func GetReservationSchedules(c echo.Context) error {
+	// Parse date parameters
+	startDate := c.QueryParam("startDate")
+	endDate := c.QueryParam("endDate")
 
-// 	if startDate == "" || endDate == "" {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{
-// 			"message": "start date and end date are required",
-// 		})
-// 	}
+	if startDate == "" || endDate == "" {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "start date and end date are required",
+		})
+	}
 
-// 	start, err := time.Parse("2006-01-02", startDate)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{
-// 			"message": "invalid start date format, use YYYY-MM-DD",
-// 		})
-// 	}
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "invalid start date format, use YYYY-MM-DD",
+		})
+	}
 
-// 	end, err := time.Parse("2006-01-02", endDate)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{
-// 			"message": "invalid end date format, use YYYY-MM-DD",
-// 		})
-// 	}
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "invalid end date format, use YYYY-MM-DD",
+		})
+	}
 
-// 	if start.After(end) {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{
-// 			"message": "start date must be before end date",
-// 		})
-// 	}
+	if start.After(end) {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "start date must be before end date",
+		})
+	}
 
-// 	// Parse pagination parameters
-// 	page, _ := strconv.Atoi(c.QueryParam("page"))
-// 	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
+	// Parse pagination parameters
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
 
-// 	if page < 1 {
-// 		page = 1
-// 	}
-// 	if pageSize < 1 {
-// 		pageSize = 10
-// 	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
 
-// 	offset := (page - 1) * pageSize
+	offset := (page - 1) * pageSize
 
-// 	// Get total count
-// 	var totalData int
-// 	countQuery := `
-//         SELECT COUNT(DISTINCT rd.room_id)
-//         FROM reservation_details rd
-//         JOIN reservations r ON rd.reservation_id = r.id
-//         WHERE DATE(rd.start_at) BETWEEN $1 AND $2
-//     `
-// 	err = db.QueryRow(countQuery, start, end).Scan(&totalData)
-// 	if err != nil {
-// 		log.Println("Count query error:", err)
-// 		return c.JSON(http.StatusInternalServerError, echo.Map{
-// 			"message": "internal server error",
-// 		})
-// 	}
+	// Get total count
+	var totalData int
+	countQuery := `
+        SELECT COUNT(DISTINCT rd.room_id)
+        FROM reservation_details rd
+        JOIN reservations r ON rd.reservation_id = r.id
+        WHERE DATE(rd.start_at) BETWEEN $1 AND $2
+    `
+	err = db.QueryRow(countQuery, start, end).Scan(&totalData)
+	if err != nil {
+		log.Println("Count query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{
+			"message": "internal server error",
+		})
+	}
 
-// 	// Get schedules
-// 	query := `
-//         WITH RoomReservations AS (
-//             SELECT DISTINCT rd.room_id
-//             FROM reservation_details rd
-//             WHERE DATE(rd.start_at) BETWEEN $1 AND $2
-//             LIMIT $3 OFFSET $4
-//         )
-//         SELECT
-//             r.id,
-//             r.name AS room_name,
-//             res.contact_company,
-//             rd.start_at,
-//             rd.end_at,
-//             CASE
-//                 WHEN rd.end_at < NOW() THEN 'Done'
-//                 WHEN rd.start_at <= NOW() AND rd.end_at >= NOW() THEN 'In Progress'
-//                 ELSE 'Up Coming'
-//             END as status
-//         FROM RoomReservations rr
-//         JOIN rooms r ON rr.room_id = r.id
-//         LEFT JOIN reservation_details rd ON r.id = rd.room_id
-//         LEFT JOIN reservations res ON rd.reservation_id = res.id
-//         WHERE DATE(rd.start_at) BETWEEN $1 AND $2
-//         ORDER BY r.id, rd.start_at
-//     `
+	// Get schedules
+	query := `
+        WITH RoomReservations AS (
+            SELECT DISTINCT rd.room_id
+            FROM reservation_details rd
+            WHERE DATE(rd.start_at) BETWEEN $1 AND $2
+            LIMIT $3 OFFSET $4
+        )
+        SELECT 
+            r.id,
+            r.name AS room_name,
+            res.contact_company,
+            rd.start_at,
+            rd.end_at,
+            CASE
+                WHEN rd.end_at < NOW() THEN 'Done'
+                WHEN rd.start_at <= NOW() AND rd.end_at >= NOW() THEN 'In Progress'
+                ELSE 'Up Coming'
+            END as status
+        FROM RoomReservations rr
+        JOIN rooms r ON rr.room_id = r.id
+        LEFT JOIN reservation_details rd ON r.id = rd.room_id
+        LEFT JOIN reservations res ON rd.reservation_id = res.id
+        WHERE DATE(rd.start_at) BETWEEN $1 AND $2
+        ORDER BY r.id, rd.start_at
+    `
 
-// 	rows, err := db.Query(query, start, end, pageSize, offset)
-// 	if err != nil {
-// 		log.Println("Schedule query error:", err)
-// 		return c.JSON(http.StatusInternalServerError, echo.Map{
-// 			"message": "internal server error",
-// 		})
-// 	}
-// 	defer rows.Close()
+	rows, err := db.Query(query, start, end, pageSize, offset)
+	if err != nil {
+		log.Println("Schedule query error:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{
+			"message": "internal server error",
+		})
+	}
+	defer rows.Close()
 
-// 	scheduleMap := make(map[string]*RoomScheduleInfo)
-// 	for rows.Next() {
-// 		var (
-// 			roomID, roomName   string
-// 			companyName        sql.NullString
-// 			startTime, endTime time.Time
-// 			status             string
-// 		)
+	scheduleMap := make(map[string]*RoomScheduleInfo)
+	for rows.Next() {
+		var (
+			roomID, roomName   string
+			companyName        sql.NullString
+			startTime, endTime time.Time
+			status             string
+		)
 
-// 		err := rows.Scan(&roomID, &roomName, &companyName, &startTime, &endTime, &status)
-// 		if err != nil {
-// 			log.Println("Row scan error:", err)
-// 			return c.JSON(http.StatusInternalServerError, echo.Map{
-// 				"message": "internal server error",
-// 			})
-// 		}
+		err := rows.Scan(&roomID, &roomName, &companyName, &startTime, &endTime, &status)
+		if err != nil {
+			log.Println("Row scan error:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{
+				"message": "internal server error",
+			})
+		}
 
-// 		if _, exists := scheduleMap[roomID]; !exists {
-// 			scheduleMap[roomID] = &RoomScheduleInfo{
-// 				ID:          roomID,
-// 				RoomName:    roomName,
-// 				CompanyName: companyName.String,
-// 				Schedules:   make([]Schedule, 0),
-// 			}
-// 		}
+		if _, exists := scheduleMap[roomID]; !exists {
+			scheduleMap[roomID] = &RoomScheduleInfo{
+				ID:          roomID,
+				RoomName:    roomName,
+				CompanyName: companyName.String,
+				Schedules:   make([]Schedule, 0),
+			}
+		}
 
-// 		scheduleMap[roomID].Schedules = append(scheduleMap[roomID].Schedules, Schedule{
-// 			StartTime: startTime.Format(time.RFC3339),
-// 			EndTime:   endTime.Format(time.RFC3339),
-// 			Status:    status,
-// 		})
-// 	}
+		scheduleMap[roomID].Schedules = append(scheduleMap[roomID].Schedules, Schedule{
+			StartTime: startTime.Format(time.RFC3339),
+			EndTime:   endTime.Format(time.RFC3339),
+			Status:    status,
+		})
+	}
 
-// 	// Convert map to slice
-// 	schedules := make([]RoomScheduleInfo, 0, len(scheduleMap))
-// 	for _, schedule := range scheduleMap {
-// 		schedules = append(schedules, *schedule)
-// 	}
+	// Convert map to slice
+	schedules := make([]RoomScheduleInfo, 0, len(scheduleMap))
+	for _, schedule := range scheduleMap {
+		schedules = append(schedules, *schedule)
+	}
 
-// 	totalPages := (totalData + pageSize - 1) / pageSize
+	totalPages := (totalData + pageSize - 1) / pageSize
 
-// 	response := ScheduleResponse{
-// 		Message:   "success",
-// 		Data:      schedules,
-// 		Page:      page,
-// 		PageSize:  pageSize,
-// 		TotalPage: totalPages,
-// 		TotalData: totalData,
-// 	}
+	response := ScheduleResponse{
+		Message:   "success",
+		Data:      schedules,
+		Page:      page,
+		PageSize:  pageSize,
+		TotalPage: totalPages,
+		TotalData: totalData,
+	}
 
-// 	return c.JSON(http.StatusOK, response)
-// }
+	return c.JSON(http.StatusOK, response)
+}
 
 // Add this handler function
 // GetDashboard godoc
