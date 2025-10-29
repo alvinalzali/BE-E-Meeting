@@ -5,8 +5,9 @@
 --insert initial users
 INSERT INTO users (username, email, password_hash, name, status, role, lang, created_at)
 VALUES 
-('admin', 'alvinalzali40@gmail.com','$2a$10$.pWuAFHnJH.5XePq4bvCx.6UQkpSzg0F.iGyMcDuGbZRt/m/sYvW2', 'admin', 'active', 'admin', 'english', NOW());
--- pass : alvin40
+('admin', 'admin@gmail.com','$2a$10$RzavPkF7UEuTStyVzZPYDelPVAL8I/OWx3SGmcbaNvrQRk86Ihuii', 'admin', 'active', 'admin', 'english', NOW()),
+('user', 'user@gmail.com','$2a$10$xxV.4wmjnKeIgf6N.ndITeHr6O.H9TIVDD//4PSmEY57scTONLrmS', 'user', 'active', 'user', 'english', NOW());
+-- pass : Admin@40 or User@40
 
 
 -- Insert initial rooms
