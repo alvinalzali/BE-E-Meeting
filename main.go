@@ -162,6 +162,8 @@ func main() {
 	e.POST("/register", RegisterUser)
 	e.POST("/password/reset_request", PasswordReset)
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
+
+	// route for uploads
 	e.POST("/uploads", UploadImage)
 
 	// route for rooms
@@ -603,6 +605,7 @@ func GetUserByID(c echo.Context) error {
 // @Router /users/{id} [put]
 func UpdateUserByID(c echo.Context) error {
 	id := c.Param("id")
+	// tambah var body url
 
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
@@ -1019,63 +1022,63 @@ func GetSnacks(c echo.Context) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
 // @Router /reservation/calculation [get]
-// func CalculateReservation(c echo.Context) error {
-// 	//ambil query data dari parameter request URL
-// 	roomID := c.QueryParam("room_id")
-// 	snackID := c.QueryParam("snack_id")
-// 	startTime := c.QueryParam("startTime")
-// 	endTime := c.QueryParam("endTime")
-// 	participant := c.QueryParam("participant")
-// 	userID := c.QueryParam("user_id")
-// 	name := c.QueryParam("name")
-// 	phoneNumber := c.QueryParam("phoneNumber")
-// 	company := c.QueryParam("company")
+func CalculateReservation(c echo.Context) error {
+	//ambil query data dari parameter request URL
+	roomID := c.QueryParam("room_id")
+	snackID := c.QueryParam("snack_id")
+	startTime := c.QueryParam("startTime")
+	endTime := c.QueryParam("endTime")
+	participant := c.QueryParam("participant")
+	userID := c.QueryParam("user_id")
+	name := c.QueryParam("name")
+	phoneNumber := c.QueryParam("phoneNumber")
+	company := c.QueryParam("company")
 
-// 	//validasi parameter wajib
-// 	if roomID == "" || startTime == "" || endTime == "" {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "missing required parameters"})
-// 	}
+	//validasi parameter wajib
+	if roomID == "" || startTime == "" || endTime == "" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "missing required parameters"})
+	}
 
-// 	//unauthorized
-// 	if userID == "" || name == "" || phoneNumber == "" || company == "" {
-// 		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "unauthorized"})
-// 	}
+	//unauthorized
+	if userID == "" || name == "" || phoneNumber == "" || company == "" {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "unauthorized"})
+	}
 
-// 	// --- Konversi angka dan waktu ---
-// 	roomIDInt, err := strconv.Atoi(roomID)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room_id"})
-// 	}
+	// --- Konversi angka dan waktu ---
+	roomIDInt, err := strconv.Atoi(roomID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room_id"})
+	}
 
-// 	snackIDInt := 0
-// 	if snackID != "" {
-// 		snackIDInt, err = strconv.Atoi(snackID)
-// 		if err != nil {
-// 			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid snack_id"})
-// 		}
-// 	}
+	snackIDInt := 0
+	if snackID != "" {
+		snackIDInt, err = strconv.Atoi(snackID)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid snack_id"})
+		}
+	}
 
-// 	participantInt, err := strconv.Atoi(participant)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid participant"})
-// 	}
+	participantInt, err := strconv.Atoi(participant)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid participant"})
+	}
 
-// 	start, err := time.Parse(time.RFC3339, startTime)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid startTime format (use RFC3339)"})
-// 	}
+	start, err := time.Parse(time.RFC3339, startTime)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid startTime format (use RFC3339)"})
+	}
 
-// 	end, err := time.Parse(time.RFC3339, endTime)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid endTime format (use RFC3339)"})
-// 	}
+	end, err := time.Parse(time.RFC3339, endTime)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid endTime format (use RFC3339)"})
+	}
 
-// 	if !end.After(start) {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "endTime must be after startTime"})
-// 	}
+	if !end.After(start) {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "endTime must be after startTime"})
+	}
 
-// 	durationMinutes := int(end.Sub(start).Minutes())
+	durationMinutes := int(end.Sub(start).Minutes())
 
-// 	// ambil 
+	// ambil
 
-// }
+}
