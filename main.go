@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -131,6 +132,42 @@ type ReservationRequestBody struct {
 	Company     string                   `json:"company"`
 	Notes       string                   `json:"notes"`
 	Rooms       []RoomReservationRequest `json:"rooms"`
+}
+
+// Struct Reservation History :
+// Untuk respons utama
+type ReservationHistoryResponse struct {
+	Message   string                   `json:"message"`
+	Data      []ReservationHistoryData `json:"data"`
+	Page      int                      `json:"page"`
+	PageSize  int                      `json:"pageSize"`
+	TotalPage int                      `json:"totalPage"`
+	TotalData int                      `json:"totalData"`
+}
+
+// Data utama per reservation
+type ReservationHistoryData struct {
+	ID            int                            `json:"id"`
+	Name          string                         `json:"name"`
+	PhoneNumber   string                         `json:"phoneNumber"`
+	Company       string                         `json:"company"`
+	SubTotalSnack float64                        `json:"subTotalSnack"`
+	SubTotalRoom  float64                        `json:"subTotalRoom"`
+	Total         float64                        `json:"total"`
+	Status        string                         `json:"status"`
+	CreatedAt     time.Time                      `json:"createdAt"`
+	UpdatedAt     time.Time                      `json:"updatedAt"`
+	Rooms         []ReservationHistoryRoomDetail `json:"rooms"`
+}
+
+// Detail room di dalam reservation
+type ReservationHistoryRoomDetail struct {
+	ID         int     `json:"id"`
+	Price      float64 `json:"price"`
+	Name       string  `json:"name"`
+	Type       string  `json:"type"`
+	TotalRoom  float64 `json:"totalRoom"`
+	TotalSnack float64 `json:"totalSnack"`
 }
 
 var BaseURL string = "http://localhost:8080"
@@ -1194,7 +1231,7 @@ func CalculateReservation(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-// (PUT /reservation)
+// (POST /reservation)
 // CreateReservation godoc
 // @Summary Create a new reservation
 // @Description Create a new reservation
@@ -1209,341 +1246,322 @@ func CalculateReservation(c echo.Context) error {
 func CreateReservation(c echo.Context) error {
 	var req ReservationRequestBody
 
+	// Bind JSON ke struct
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	// validasi
-	if req.UserID <= 0 || req.Name == "" || req.PhoneNumber == "" || req.Company == "" || req.Notes == "" || len(req.Rooms) == 0 {
+	// Validasi
+	if req.UserID <= 0 || req.Name == "" || req.PhoneNumber == "" || req.Company == "" || len(req.Rooms) == 0 {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	// --- Cek booking bentrok ---
+	for _, room := range req.Rooms {
+		if room.StartTime.IsZero() || room.EndTime.IsZero() {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid start or end time"})
+		}
+	}
+
+	// Cek bentrok booking
 	for _, room := range req.Rooms {
 		var existing int
 		err := db.QueryRow(`
 			SELECT COUNT(*)
 			FROM reservation_details
 			WHERE room_id = $1
-			AND (
-				(start_at, end_at) OVERLAPS ($2, $3)
-			)
+			AND (start_at, end_at) OVERLAPS ($2, $3)
 		`, room.ID, room.StartTime, room.EndTime).Scan(&existing)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error 1"})
+			log.Println("Error checking overlap:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 		}
 		if existing > 0 {
 			return c.JSON(http.StatusBadRequest, map[string]string{
-				"message": "Room has been booked",
+				"message": fmt.Sprintf("Room %d has already been booked for that time range", room.ID),
 			})
 		}
 	}
 
-	// --- Simpan ke tabel reservations ---
-	query := `
+	// Mulai transaksi db
+	tx, err := db.Begin()
+	if err != nil {
+		log.Println("Error starting transaction:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// Insert ke tabel reservations
+	var reservationID int
+	err = tx.QueryRow(`
 		INSERT INTO reservations (
 			user_id, contact_name, contact_phone, contact_company,
 			note, status_reservation, created_at, updated_at
 		)
 		VALUES ($1, $2, $3, $4, $5, 'booked', NOW(), NOW())
 		RETURNING id
-		`
-
-	var reservationID int
-	err := db.QueryRow(
-		query,
-		req.UserID, req.Name, req.PhoneNumber, req.Company,
-		req.Notes,
-	).Scan(&reservationID)
+	`, req.UserID, req.Name, req.PhoneNumber, req.Company, req.Notes).Scan(&reservationID)
 	if err != nil {
 		log.Println("Error inserting reservation:", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"message": "Internal server error 2",
-		})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 	}
 
-	// // ambil nilai data dari tabel room berdasrakan Rooms.ID
-	query = `
-		Select id, name, room_type, capacity, price_per_hour, image_url, created_at, updated_at
-		FROM rooms
-		WHERE id = $1
-		`
-
-	var roomTable Room
-	err = db.QueryRow(query, strconv.Itoa(req.Rooms[0].ID)).Scan(
-		&roomTable.ID,
-		&roomTable.Name,
-		&roomTable.RoomType,
-		&roomTable.Capacity,
-		&roomTable.PricePerHour,
-		&roomTable.PictureURL,
-		&roomTable.CreatedAt,
-		&roomTable.UpdatedAt,
-	)
-
-	// ambil nilai data dari tabel snack berdasrakan Rooms.SnackID
-	query = `
-		Select id, name, unit, price, category
-		FROM snacks
-		WHERE id = $1
-		`
-
-	var snackTable Snack
-	err = db.QueryRow(query, strconv.Itoa(req.Rooms[0].SnackID)).Scan(
-
-		&snackTable.ID,
-		&snackTable.Name,
-		&snackTable.Unit,
-		&snackTable.Price,
-		&snackTable.Category,
-	)
-
-	//simpan data ke ReservationDetail
-	//--- Simpan ke tabel reservation_details
-	query = `
-		INSERT INTO reservation_details (
-			reservation_id,
-			room_id, room_name, room_price,
-			snack_id, snack_name, snack_price,
-			start_at, end_at, created_at, updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-		`
-
+	// Loop setiap room untuk insert detail
 	for _, room := range req.Rooms {
-		_, err := db.Exec(
-			query,
+		var roomTable Room
+		err = tx.QueryRow(`
+			SELECT id, name, room_type, capacity, price_per_hour, image_url, created_at, updated_at
+			FROM rooms WHERE id = $1
+		`, room.ID).Scan(
+			&roomTable.ID,
+			&roomTable.Name,
+			&roomTable.RoomType,
+			&roomTable.Capacity,
+			&roomTable.PricePerHour,
+			&roomTable.PictureURL,
+			&roomTable.CreatedAt,
+			&roomTable.UpdatedAt,
+		)
+		if err != nil {
+			log.Println("Error selecting room:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+
+		var snackTable Snack
+		err = tx.QueryRow(`
+			SELECT id, name, unit, price, category
+			FROM snacks WHERE id = $1
+		`, room.SnackID).Scan(
+			&snackTable.ID,
+			&snackTable.Name,
+			&snackTable.Unit,
+			&snackTable.Price,
+			&snackTable.Category,
+		)
+		if err != nil {
+			log.Println("Error selecting snack:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+
+		// Insert ke reservation_details
+		_, err = tx.Exec(`
+			INSERT INTO reservation_details (
+				reservation_id,
+				room_id, room_name, room_price,
+				snack_id, snack_name, snack_price,
+				start_at, end_at, created_at, updated_at
+			)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
+		`,
 			reservationID,
 			room.ID, roomTable.Name, roomTable.PricePerHour,
 			room.SnackID, snackTable.Name, snackTable.Price,
 			room.StartTime, room.EndTime,
 		)
 		if err != nil {
-			log.Println("Error inserting reservation details:", err)
-			return c.JSON(http.StatusInternalServerError, map[string]string{
-				"message": "Internal server error 3",
-			})
+			log.Println("Error inserting reservation detail:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 		}
 	}
 
-	//masukan req ke variabel output untuk dimasukan ke return
-	// return c.JSON(http.StatusOK, map[string]interface{}{
-	// 	"message": "Reservation created successfully",
-	// 	"req":     req,
-	// })
-
-	snackid := strconv.Itoa(req.Rooms[0].SnackID) //.req.Rooms[0].SnackID
-	tableid := strconv.Itoa(req.Rooms[0].ID)      //req.Rooms[0].ID
-
-	return c.JSON(http.StatusOK, map[string]string{
-		"message":    "Reservation created successfully",
-		"roomTable":  tableid,
-		"snackTable": snackid,
+	// sukses
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "Reservation created successfully",
 	})
-
 }
 
-func HistoryReservation(c echo.Context) error {
-	startDateStr := c.QueryParam("startDate")
-	endDateStr := c.QueryParam("endDate")
-	roomType := c.QueryParam("roomType")
+// GetReservationHistory godoc
+// @Summary Get meeting reservation history
+// @Description Retrieve meeting reservation history filtered by user_id, room_id, or date.
+// @Tags Reservation
+// @Param user_id query string false "User ID"
+// @Param room_id query string false "Room ID"
+// @Param date query string false "Date (YYYY-MM-DD)"
+// @Produce json
+// @Success 200 {object} map[string]interface{} "History retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid query parameter"
+// @Failure 500 {object} map[string]interface{} "Failed to retrieve history"
+// @Router /history [get]
+func GetReservationHistory(c echo.Context) error {
+	startDate := c.QueryParam("startDate")
+	endDate := c.QueryParam("endDate")
+	roomType := c.QueryParam("type")
 	status := c.QueryParam("status")
 
+	// Validasi room type
+	validTypes := map[string]bool{
+		"small": true, "medium": true, "large": true,
+	}
+	if !validTypes[strings.ToLower(roomType)] {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "room type is not valid"})
+	}
+
+	// Pagination parameter
 	page, _ := strconv.Atoi(c.QueryParam("page"))
-	if page < 1 {
+	if page <= 0 {
 		page = 1
 	}
-
 	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
-	if pageSize < 1 {
+	if pageSize <= 0 {
 		pageSize = 10
 	}
-
 	offset := (page - 1) * pageSize
 
-	// validasi room type
-	validTypes := map[string]bool{
-		"small":  true,
-		"medium": true,
-		"large":  true,
-	}
-	if _, ok := validTypes[roomType]; !ok {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"message": "Invalid room type",
-		})
-	}
-
-	// Query utama
-	query := ` 
-		SELECT
-			reservations.id,
-			reservations.contact_name,
-			reservations.contact_phone,
-			reservations.contact_company,
-			reservations.subtotal_snack,
-			reservations.subtotal_room,
-			reservations.total,
-			reservations.status_reservation,
-			reservations.created_at,
-			reservations.updated_at,
-		FROM
-		WHERE 1=1
+	// query filter
+	query := `
+	SELECT 
+		r.id, r.contact_name, r.contact_phone, r.contact_company,
+		COALESCE(SUM(rd.snack_price),0) AS sub_total_snack,
+		COALESCE(SUM(rd.room_price),0) AS sub_total_room,
+		COALESCE(SUM(rd.snack_price + rd.room_price),0) AS total,
+		r.status_reservation, r.created_at, r.updated_at
+	FROM reservations r
+	JOIN reservation_details rd ON rd.reservation_id = r.id
+	JOIN rooms rm ON rm.id = rd.room_id
+	WHERE 1=1
 	`
+
 	args := []interface{}{}
-	argIndex := 1
+	argIdx := 1
 
-	if startDateStr != "" {
-		query += fmt.Sprintf(" AND reservations.created_at >= $%d", argIndex)
-		args = append(args, startDateStr)
-		argIndex++
+	if startDate != "" {
+		query += fmt.Sprintf(" AND r.created_at >= $%d", argIdx)
+		args = append(args, startDate)
+		argIdx++
 	}
-
-	if endDateStr != "" {
-		query += fmt.Sprintf(" AND reservations.created_at <= $%d", argIndex)
-		args = append(args, endDateStr)
-		argIndex++
+	if endDate != "" {
+		query += fmt.Sprintf(" AND r.created_at <= $%d", argIdx)
+		args = append(args, endDate)
+		argIdx++
 	}
-
 	if roomType != "" {
-		query += fmt.Sprintf(" AND reservations.room_type = $%d", argIndex)
+		query += fmt.Sprintf(" AND rm.room_type = $%d", argIdx)
 		args = append(args, roomType)
-		argIndex++
+		argIdx++
 	}
-
 	if status != "" {
-		query += fmt.Sprintf(" AND reservations.status_reservation = $%d", argIndex)
+		query += fmt.Sprintf(" AND r.status_reservation = $%d", argIdx)
 		args = append(args, status)
-		argIndex++
+		argIdx++
 	}
 
-	query += " ORDER BY reservations.created_at DESC LIMIT $%d OFFSET $%d"
+	query += `
+	GROUP BY r.id, r.contact_name, r.contact_phone, r.contact_company, r.status_reservation, r.created_at, r.updated_at
+	ORDER BY r.created_at DESC
+	LIMIT $%d OFFSET $%d
+	`
+	query = fmt.Sprintf(query, argIdx, argIdx+1)
 	args = append(args, pageSize, offset)
-	query = fmt.Sprintf(query, argIndex, argIndex+1)
 
+	// Jalankan query utama
 	rows, err := db.Query(query, args...)
 	if err != nil {
-		log.Println("DB query error:", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"message": "Internal server error",
-		})
+		log.Println("Error fetching reservation history:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 	}
 	defer rows.Close()
 
-	var histories []map[string]interface{}
-
+	var histories []ReservationHistoryData
 	for rows.Next() {
-		var (
-			id                int
-			contactName       string
-			contactPhone      string
-			contactCompany    string
-			subtotalSnack     float64
-			subtotalRoom      float64
-			total             float64
-			statusReservation string
-			createdAt         time.Time
-			updatedAt         time.Time
+		var h ReservationHistoryData
+		err := rows.Scan(
+			&h.ID, &h.Name, &h.PhoneNumber, &h.Company,
+			&h.SubTotalSnack, &h.SubTotalRoom, &h.Total,
+			&h.Status, &h.CreatedAt, &h.UpdatedAt,
 		)
-		if err := rows.Scan(
-			&id,
-			&contactName,
-			&contactPhone,
-			&contactCompany,
-			&subtotalSnack,
-			&subtotalRoom,
-			&total,
-			&statusReservation,
-			&createdAt,
-			&updatedAt,
-		); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{
-				"message": "Internal server error",
-			})
+		if err != nil {
+			log.Println("Error scanning reservation:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 		}
-	}
 
-	// ambil detail room dari reservation_details
-	roomQuery := `
-		SELECT
-			reservation_details.room_id,
-			reservation_details.room_price,
-			reservation_details.room_name,
-			reservation_details.room_type,
-			reservation_details.total_room,
-			reservation_details.total_snack
-		FROM
-			reservation_details JOIN reservations ON reservation_details.reservation_id = reservations.id
-		WHERE
-			reservations.id = $1
-	`
-	roomRows, err := db.Query(roomQuery, id)
-	if err != nil {
-		log.Println("DB query error:", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"message": "Internal server error",
-		})
-	}
-	defer roomRows.Close()
-
-	var rooms []map[string]interface{}
-	for roomRows.Next() {
-		var (
-			roomID     int
-			roomPrice  float64
-			roomName   string
-			roomType   string
-			totalRoom  int
-			totalSnack int
-		)
-		if err := roomRows.Scan(
-			&roomID,
-			&roomPrice,
-			&roomName,
-			&roomType,
-			&totalRoom,
-			&totalSnack,
-		); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{
-				"message": "Internal server error",
-			})
+		// Ambil data room per reservation
+		roomRows, err := db.Query(`
+			SELECT rm.id, rm.price_per_hour, rm.name, rm.room_type,
+				COALESCE(rd.room_price,0), COALESCE(rd.snack_price,0)
+			FROM reservation_details rd
+			JOIN rooms rm ON rm.id = rd.room_id
+			WHERE rd.reservation_id = $1
+		`, h.ID)
+		if err != nil {
+			log.Println("Error fetching rooms:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 		}
-		rooms = append(rooms, map[string]interface{}{
-			"room_id":     roomID,
-			"room_price":  roomPrice,
-			"room_name":   roomName,
-			"room_type":   roomType,
-			"total_room":  totalRoom,
-			"total_snack": totalSnack,
-		})
+
+		for roomRows.Next() {
+			var r ReservationHistoryRoomDetail
+			err := roomRows.Scan(
+				&r.ID, &r.Price, &r.Name, &r.Type,
+				&r.TotalRoom, &r.TotalSnack,
+			)
+			if err != nil {
+				log.Println("Error scanning room detail:", err)
+				return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+			}
+			h.Rooms = append(h.Rooms, r)
+		}
+		roomRows.Close()
+
+		histories = append(histories, h)
 	}
 
-	histories = append(histories, map[string]interface{}{
-		"id":                 id,
-		"contact_name":       contactName,
-		"contact_phone":      contactPhone,
-		"contact_company":    contactCompany,
-		"subtotal_snack":     subtotalSnack,
-		"subtotal_room":      subtotalRoom,
-		"total":              total,
-		"status_reservation": statusReservation,
-		"created_at":         createdAt,
-		"updated_at":         updatedAt,
-		"rooms":              rooms,
-	})
-
-	// hitung total data
+	// --- Hitung total data ---
 	var totalData int
-	if err := db.QueryRow("SELECT COUNT(*) FROM reservations").Scan(&totalData); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"message": "Internal server error",
-		})
+	countQuery := `
+		SELECT COUNT(DISTINCT r.id)
+		FROM reservations r
+		JOIN reservation_details rd ON rd.reservation_id = r.id
+		JOIN rooms rm ON rm.id = rd.room_id
+		WHERE 1=1
+	`
+	countArgs := []interface{}{}
+	argCount := 1
+
+	if startDate != "" {
+		countQuery += fmt.Sprintf(" AND r.created_at >= $%d", argCount)
+		countArgs = append(countArgs, startDate)
+		argCount++
+	}
+	if endDate != "" {
+		countQuery += fmt.Sprintf(" AND r.created_at <= $%d", argCount)
+		countArgs = append(countArgs, endDate)
+		argCount++
+	}
+	if roomType != "" {
+		countQuery += fmt.Sprintf(" AND rm.room_type = $%d", argCount)
+		countArgs = append(countArgs, roomType)
+		argCount++
+	}
+	if status != "" {
+		countQuery += fmt.Sprintf(" AND r.status_reservation = $%d", argCount)
+		countArgs = append(countArgs, status)
+		argCount++
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message":   "Success",
-		"data":      histories,
-		"page":      page,
-		"pageSize":  pageSize,
-		"totalData": totalData,
+	err = db.QueryRow(countQuery, countArgs...).Scan(&totalData)
+	if err != nil {
+		log.Println("Error counting data:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	}
+
+	totalPage := int(math.Ceil(float64(totalData) / float64(pageSize)))
+
+	// --- Jika tidak ada data ---
+	if len(histories) == 0 {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "url not found"})
+	}
+
+	// --- Response sukses ---
+	return c.JSON(http.StatusOK, ReservationHistoryResponse{
+		Message:   "Reservation history fetched successfully",
+		Data:      histories,
+		Page:      page,
+		PageSize:  pageSize,
+		TotalPage: totalPage,
+		TotalData: totalData,
 	})
 }
