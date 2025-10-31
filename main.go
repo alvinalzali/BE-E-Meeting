@@ -117,6 +117,43 @@ type Snack struct {
 	Category string  `json:"category"`
 }
 
+// struct response CalculateReservation
+// Room detail dalam response perhitungan reservasi
+type RoomCalculationDetail struct {
+	Name          string    `json:"name"`
+	PricePerHour  float64   `json:"pricePerHour"`
+	ImageURL      string    `json:"imageURL"`
+	Capacity      int       `json:"capacity"`
+	Type          string    `json:"type"`
+	SubTotalSnack float64   `json:"subTotalSnack"`
+	SubTotalRoom  float64   `json:"subTotalRoom"`
+	StartTime     time.Time `json:"startTime"`
+	EndTime       time.Time `json:"endTime"`
+	Duration      int       `json:"duration"`
+	Participant   int       `json:"participant"`
+	Snack         Snack     `json:"snack"`
+}
+
+// Data personal yang disertakan pada reservasi
+type PersonalData struct {
+	Name        string `json:"name"`
+	PhoneNumber string `json:"phoneNumber"`
+	Company     string `json:"company"`
+}
+
+type CalculateReservationResponse struct {
+	Message string                   `json:"message"`
+	Data    CalculateReservationData `json:"data"`
+}
+
+type CalculateReservationData struct {
+	Rooms         []RoomCalculationDetail `json:"rooms"`
+	PersonalData  PersonalData            `json:"personalData"`
+	SubTotalRoom  float64                 `json:"subTotalRoom"`
+	SubTotalSnack float64                 `json:"subTotalSnack"`
+	Total         float64                 `json:"total"`
+}
+
 type RoomReservationRequest struct {
 	ID          int       `json:"id"`
 	StartTime   time.Time `json:"startTime"`
@@ -132,6 +169,26 @@ type ReservationRequestBody struct {
 	Company     string                   `json:"company"`
 	Notes       string                   `json:"notes"`
 	Rooms       []RoomReservationRequest `json:"rooms"`
+}
+
+// Response struct history
+type HistoryResponse struct {
+	Message string               `json:"message"`
+	Data    []ReservationHistory `json:"data"`
+}
+
+// Data struct h
+type ReservationHistory struct {
+	ID            int     `json:"id"`
+	Name          string  `json:"name"`
+	PhoneNumber   float64 `json:"phoneNumber"`
+	Company       string  `json:"company"`
+	SubTotalSnack float64 `json:"subTotalSnack"`
+	SubTotalRoom  float64 `json:"subTotalRoom"`
+	GrandTotal    float64 `json:"grandTotal"`
+	Type          string  `json:"type"`
+	Status        string  `json:"status"`
+	CreatedAt     string  `json:"createdAt"`
 }
 
 // Struct Reservation History :
@@ -174,7 +231,8 @@ var BaseURL string = "http://localhost:8080"
 var ImageURL string
 var db *sql.DB
 var JwtSecret []byte
-var DefaultAvatar string = BaseURL + "/assets/default/img/default_profile.jpg"
+var DefaultAvatarURL string = BaseURL + "/assets/default/img/default_profile.jpg"
+var DefaultRoomURL string = BaseURL + "/assets/default/img/default_room.jpg"
 
 // @title E-Meeting API
 // @version 1.0
@@ -214,21 +272,27 @@ func main() {
 	// route for login, register, password reset
 	e.POST("/login", login)
 	e.POST("/register", RegisterUser)
-	e.POST("/password/reset_request", PasswordReset)
+	e.POST("password/reset_request", PasswordReset)
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
-	e.POST("/uploads", UploadImage)
+
+	// harus pake auth
+
+	authGroup := e.Group("/")
+	authGroup.Use(middlewareAuth)
+	authGroup.POST("uploads", UploadImage)
 
 	// route for rooms
-	e.POST("/rooms", CreateRoom)
-	e.GET("/rooms", GetRooms)
-	e.GET("/rooms/:id", GetRoomByID)
-	e.PUT("/rooms/:id", UpdateRoom)
-	e.DELETE("/rooms/:id", DeleteRoom)
-	e.GET("/snacks", GetSnacks)
+	authGroup.POST("rooms", CreateRoom)
+	authGroup.GET("rooms", GetRooms)
+	authGroup.GET("rooms/:id", GetRoomByID)
+	authGroup.PUT("rooms/:id", UpdateRoom)
+	authGroup.DELETE("rooms/:id", DeleteRoom)
+	authGroup.GET("snacks", GetSnacks)
 
 	// route for reservations
-	e.GET("/reservation/calculation", CalculateReservation)
-	e.POST("/reservation", CreateReservation)
+	authGroup.GET("reservation/calculation", CalculateReservation)
+	authGroup.POST("reservation", CreateReservation)
+	authGroup.GET("reservation/history", GetReservationHistory)
 
 	// route group users
 	userGroup := e.Group("/users")
@@ -312,9 +376,18 @@ func login(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Token Generation Failed"
 	}
 
+	// ambil id dari tabel users
+	var user_id string
+	err = db.QueryRow(`SELECT id FROM users WHERE username=$1`, storedUsername).Scan(&user_id)
+	if err != nil {
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Database Error"
+	}
+
 	// return token
 	c.Response().Header().Set("Authorization", "Bearer "+token)
 	c.Response().Header().Set("Refresh-Token", "Bearer "+refreshToken)
+	c.Response().Header().Set("id", user_id)
 
 	// apa yang dimasukan ke cookie?
 
@@ -620,7 +693,7 @@ func GetUserByID(c echo.Context) error {
 
 	//jika user.Avatar_url kosong, ganti ke default
 	if user.Avatar_url == "" {
-		user.Avatar_url = DefaultAvatar
+		user.Avatar_url = DefaultAvatarURL
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{
@@ -1074,71 +1147,53 @@ func GetSnacks(c echo.Context) error {
 // @Failure 500 {object} map[string]string
 // @Router /reservation/calculation [get]
 func CalculateReservation(c echo.Context) error {
-	//ambil query data dari parameter request URL
 	roomID, _ := strconv.Atoi(c.QueryParam("room_id"))
 	snackID, _ := strconv.Atoi(c.QueryParam("snack_id"))
 	startTimeStr := c.QueryParam("startTime")
 	endTimeStr := c.QueryParam("endTime")
 	participant, _ := strconv.Atoi(c.QueryParam("participant"))
-	userID := c.QueryParam("user_id")
+	//userID := c.QueryParam("user_id")
 	name := c.QueryParam("name")
 	phoneNumber := c.QueryParam("phoneNumber")
 	company := c.QueryParam("company")
 
-	// --- Validasi awal ---
+	//cek userID sama dengan user_id pada middleware
+
+	// Validasi awal ---
 	if roomID == 0 || startTimeStr == "" || endTimeStr == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"message": "missing required parameters",
-		})
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "missing required parameters"})
 	}
 
 	startTime, err := time.Parse(time.RFC3339, startTimeStr)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"message": "invalid startTime format (must be RFC3339)",
-		})
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "invalid startTime format (must be RFC3339)"})
 	}
 	endTime, err := time.Parse(time.RFC3339, endTimeStr)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"message": "invalid endTime format (must be RFC3339)",
-		})
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "invalid endTime format (must be RFC3339)"})
 	}
 
-	// --- Ambil data room ---
-	var (
-		roomName     string
-		roomType     string
-		roomCapacity int
-		pricePerHour float64
-		roomImageURL sql.NullString
-	)
-
+	// Ambil data room
+	var room Room
 	err = db.QueryRow(`
-		SELECT name, room_type, capacity, price_per_hour, picture_url
+		SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
 		FROM rooms WHERE id = $1
-	`, roomID).Scan(&roomName, &roomType, &roomCapacity, &pricePerHour, &roomImageURL)
+	`, roomID).Scan(&room.ID, &room.Name, &room.RoomType, &room.Capacity, &room.PricePerHour, &room.PictureURL, &room.CreatedAt, &room.UpdatedAt)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "room not found"})
 	}
 
-	// --- Ambil data snack ---
-	var (
-		snackName     string
-		snackUnit     string
-		snackPrice    float64
-		snackCategory string
-	)
-
+	// Ambil data snack
+	var snack Snack
 	err = db.QueryRow(`
-		SELECT name, unit, price, category
+		SELECT id, name, unit, price, category
 		FROM snacks WHERE id = $1
-	`, snackID).Scan(&snackName, &snackUnit, &snackPrice, &snackCategory)
+	`, snackID).Scan(&snack.ID, &snack.Name, &snack.Unit, &snack.Price, &snack.Category)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "snack not found"})
 	}
 
-	// --- Cek booking bentrok ---
+	// Cek booking bentrok
 	var existing int
 	err = db.QueryRow(`
 		SELECT COUNT(*) 
@@ -1152,79 +1207,47 @@ func CalculateReservation(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 	}
 	if existing > 0 {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"message": "booking bentrok",
-		})
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "booking bentrok"})
 	}
 
-	// hitung durasi dan total penginapan (minutes)
+	// Hitung total
 	durationMinutes := int(endTime.Sub(startTime).Minutes())
 	durationHours := float64(durationMinutes) / 60.0
 
-	subTotalRoom := pricePerHour * durationHours
-	subTotalSnack := snackPrice * float64(participant)
+	subTotalRoom := room.PricePerHour * durationHours
+	subTotalSnack := snack.Price * float64(participant)
 	total := subTotalRoom + subTotalSnack
 
-	// --- Simpan ke tabel reservations ---
-	query := `
-		INSERT INTO reservations (
-			user_id, contact_name, contact_phone, contact_company,
-			duration_minute, total_participants,
-			subtotal_snack, subtotal_room, total,
-			status_reservation, created_at, updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'booked', NOW(), NOW())
-		RETURNING id
-		`
-
-	var reservationID int
-	err = db.QueryRow(
-		query,
-		userID, name, phoneNumber, company,
-		durationMinutes, participant,
-		subTotalSnack, subTotalRoom, total,
-	).Scan(&reservationID)
-	if err != nil {
-		log.Println("Error inserting reservation:", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"message": "failed to save reservation",
-		})
+	// Siapkan response struct
+	roomDetail := RoomCalculationDetail{
+		Name:          room.Name,
+		PricePerHour:  room.PricePerHour,
+		ImageURL:      room.PictureURL,
+		Capacity:      room.Capacity,
+		Type:          room.RoomType,
+		SubTotalSnack: subTotalSnack,
+		SubTotalRoom:  subTotalRoom,
+		StartTime:     startTime,
+		EndTime:       endTime,
+		Duration:      durationMinutes,
+		Participant:   participant,
+		Snack: Snack{
+			ID:       snack.ID,
+			Name:     snack.Name,
+			Unit:     snack.Unit,
+			Price:    snack.Price,
+			Category: snack.Category,
+		},
 	}
 
-	// ---  response ---
-	response := map[string]interface{}{
-		"message": "success",
-		"data": map[string]interface{}{
-			"rooms": []map[string]interface{}{
-				{
-					"name":          roomName,
-					"pricePerHour":  pricePerHour,
-					"imageURL":      roomImageURL.String,
-					"capacity":      roomCapacity,
-					"type":          roomType,
-					"subTotalSnack": subTotalSnack,
-					"subTotalRoom":  subTotalRoom,
-					"startTime":     startTime,
-					"endTime":       endTime,
-					"duration":      durationMinutes,
-					"participant":   participant,
-					"snack": map[string]interface{}{
-						"id":       snackID,
-						"name":     snackName,
-						"unit":     snackUnit,
-						"price":    snackPrice,
-						"category": snackCategory,
-					},
-				},
-			},
-			"personalData": map[string]interface{}{
-				"name":        name,
-				"phoneNumber": phoneNumber,
-				"company":     company,
-			},
-			"subTotalRoom":  subTotalRoom,
-			"subTotalSnack": subTotalSnack,
-			"total":         total,
+	response := CalculateReservationResponse{
+		Message: "success",
+		Data: CalculateReservationData{
+			Rooms:         []RoomCalculationDetail{roomDetail},
+			PersonalData:  PersonalData{Name: name, PhoneNumber: phoneNumber, Company: company},
+			SubTotalRoom:  subTotalRoom,
+			SubTotalSnack: subTotalSnack,
+			Total:         total,
 		},
 	}
 
@@ -1315,7 +1338,7 @@ func CreateReservation(c echo.Context) error {
 	for _, room := range req.Rooms {
 		var roomTable Room
 		err = tx.QueryRow(`
-			SELECT id, name, room_type, capacity, price_per_hour, image_url, created_at, updated_at
+			SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
 			FROM rooms WHERE id = $1
 		`, room.ID).Scan(
 			&roomTable.ID,
