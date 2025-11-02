@@ -155,20 +155,23 @@ type CalculateReservationData struct {
 }
 
 type RoomReservationRequest struct {
-	ID          int       `json:"id"`
+	ID          int       `json:"roomID"` // agar lebih eksplisit
 	StartTime   time.Time `json:"startTime"`
 	EndTime     time.Time `json:"endTime"`
-	Participant int       `json:"participant"`
+	Participant int       `json:"participant"` // peserta per ruangan
 	SnackID     int       `json:"snackID"`
+	AddSnack    bool      `json:"addSnack"` // kalau ruangan ini pakai snack atau tidak
 }
 
 type ReservationRequestBody struct {
-	UserID      int                      `json:"userID"`
-	Name        string                   `json:"name"`
-	PhoneNumber string                   `json:"phoneNumber"`
-	Company     string                   `json:"company"`
-	Notes       string                   `json:"notes"`
-	Rooms       []RoomReservationRequest `json:"rooms"`
+	UserID            int                      `json:"userID"`
+	Name              string                   `json:"name"`
+	PhoneNumber       string                   `json:"phoneNumber"`
+	Company           string                   `json:"company"`
+	Notes             string                   `json:"notes"`
+	TotalParticipants int                      `json:"totalParticipants"` // total keseluruhan peserta
+	AddSnack          bool                     `json:"addSnack"`          // apakah reservasi ini melibatkan snack
+	Rooms             []RoomReservationRequest `json:"rooms"`
 }
 
 // Response struct history
@@ -213,7 +216,7 @@ type ReservationHistoryData struct {
 	Total         float64                        `json:"total"`
 	Status        string                         `json:"status"`
 	CreatedAt     time.Time                      `json:"createdAt"`
-	UpdatedAt     time.Time                      `json:"updatedAt"`
+	UpdatedAt     sql.NullTime                   `json:"updatedAt"`
 	Rooms         []ReservationHistoryRoomDetail `json:"rooms"`
 }
 
@@ -228,7 +231,6 @@ type ReservationHistoryRoomDetail struct {
 }
 
 var BaseURL string = "http://localhost:8080"
-var ImageURL string
 var db *sql.DB
 var JwtSecret []byte
 var DefaultAvatarURL string = BaseURL + "/assets/default/img/default_profile.jpg"
@@ -719,7 +721,6 @@ func GetUserByID(c echo.Context) error {
 // @Router /users/{id} [put]
 func UpdateUserByID(c echo.Context) error {
 	id := c.Param("id")
-
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
@@ -730,30 +731,108 @@ func UpdateUserByID(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request body"})
 	}
 
-	//masukan update_at dengan waktu sekarang
 	user.Updated_at = time.Now().Format(time.RFC3339)
 
-	//jika user upload gambar baru, load dari variabel global imageURL
-	if ImageURL != "" {
-		user.Avatar_url = ImageURL
-	}
-
-	sqlStatement := `UPDATE users SET username=$1, email=$2, name=$3, avatar_url=$4, lang=$5, role=$6, status=$7, updated_at=$8 WHERE id=$9`
-	_, err = db.Exec(sqlStatement, user.Username, user.Email, user.Name, user.Avatar_url, user.Lang, user.Role, user.Status, user.Updated_at, idInt)
+	// --- Ambil data user saat ini ---
+	var currentUser updateUser
+	query := `SELECT username, email, avatar_url FROM users WHERE id=$1`
+	err = db.QueryRow(query, idInt).Scan(&currentUser.Username, &currentUser.Email, &currentUser.Avatar_url)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error", "detail": err.Error()})
+		log.Println("Error fetching current user:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "User not found"})
 	}
 
-	//hapus gambar di temp melalui variabel global ImageURL
-	if ImageURL != "" {
-		filePath := strings.TrimPrefix(ImageURL, "/")
-		err = os.Remove(BaseURL + "/assets/temp/" + filePath)
+	// === Cek Username ===
+	if user.Username != "" && user.Username != currentUser.Username {
+		var exists bool
+		err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 AND id<>$2)`, user.Username, idInt).Scan(&exists)
 		if err != nil {
-			fmt.Println("Failed to delete temp image:", err)
+			log.Println("Error checking username:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database check failed"})
 		}
-		// reset variabel global ImageURL
-		ImageURL = ""
+		if exists {
+			log.Println("Username already taken, keeping old username.")
+			user.Username = currentUser.Username
+		}
+	} else {
+		user.Username = currentUser.Username
 	}
+
+	// === Cek Email ===
+	if user.Email != "" && user.Email != currentUser.Email {
+		var exists bool
+		err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM users WHERE email=$1 AND id<>$2)`, user.Email, idInt).Scan(&exists)
+		if err != nil {
+			log.Println("Error checking email:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database check failed"})
+		}
+		if exists {
+			log.Println("Email already taken, keeping old email.")
+			user.Email = currentUser.Email
+		}
+	} else {
+		user.Email = currentUser.Email
+	}
+
+	// === Jika ada avatar baru ===
+	if user.Avatar_url != "" {
+		tempURL := user.Avatar_url
+		fileName := filepath.Base(tempURL)
+
+		os.MkdirAll("./assets/image", os.ModePerm)
+		os.MkdirAll("./assets/image/users", os.ModePerm)
+
+		tempPath := filepath.Join("./assets/temp", fileName)
+		finalPath := filepath.Join("./assets/image/users", fileName)
+
+		// Pindahkan file
+		err = os.Rename(tempPath, finalPath)
+		if err != nil {
+			log.Println("Failed to move image:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to move image"})
+		}
+
+		// Buat URL final
+		baseURL := c.Scheme() + "://" + c.Request().Host
+		user.Avatar_url = baseURL + "/assets/image/users/" + fileName
+
+		// Hapus avatar lama (jika bukan default)
+		if currentUser.Avatar_url != "" && !strings.Contains(currentUser.Avatar_url, "default") {
+			oldFile := filepath.Base(currentUser.Avatar_url)
+			os.Remove("./assets/image/users/" + oldFile)
+		}
+	} else {
+		// ambil nilai avatar lama pada database users
+		// jika ada, maka gunakan nilai avatar lama
+		// jika tidak ada, maka gunakan nilai default
+		var avatar_url string
+		err = db.QueryRow(`SELECT avatar_url FROM users WHERE id=$1`, idInt).Scan(&avatar_url)
+		if err != nil {
+			log.Println("Error fetching avatar_url:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error"})
+		}
+		if avatar_url != "" {
+			user.Avatar_url = avatar_url
+		}
+
+	}
+
+	// --- Update user ---
+	sqlStatement := `
+		UPDATE users 
+		SET username=$1, email=$2, name=$3, avatar_url=$4, 
+			lang=$5, role=$6, status=$7, updated_at=$8 
+		WHERE id=$9
+	`
+	_, err = db.Exec(sqlStatement,
+		user.Username, user.Email, user.Name, user.Avatar_url,
+		user.Lang, user.Role, user.Status, user.Updated_at, idInt,
+	)
+	if err != nil {
+		log.Println("Error updating user:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error"})
+	}
+
 	return c.JSON(http.StatusOK, echo.Map{
 		"message": "User updated successfully",
 		"data":    user,
@@ -763,7 +842,7 @@ func UpdateUserByID(c echo.Context) error {
 // fungsi memasukan gambar ke folder temp dan mengembalikan url gambarnya
 // UploadImage godoc
 // @Summary Save an image
-// @Description Save an image
+// @Description Upload an image to temp folder and return its URL
 // @Tags Image
 // @Accept multipart/form-data
 // @Produce json
@@ -789,35 +868,31 @@ func UploadImage(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "File size is too large"})
 	}
 
-	// Buka file upload
 	src, err := file.Open()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to open image file"})
 	}
 	defer src.Close()
 
-	// Pastikan folder temp ada
+	// Buat folder temp jika belum ada
 	os.MkdirAll("./assets/temp", os.ModePerm)
 
-	// Buat nama file baru berdasarkan timestamp
+	// Buat nama unik
 	ext := filepath.Ext(file.Filename)
-	timestamp := time.Now().Unix()
-	filename := fmt.Sprintf("%d%s", timestamp, ext)
-	filePath := "./assets/temp/" + filename
+	filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+	tempPath := filepath.Join("./assets/temp", filename)
 
-	// Simpan ke folder
-	dst, err := os.Create(filePath)
+	// Simpan file
+	dst, err := os.Create(tempPath)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to save image"})
 	}
 	defer dst.Close()
+	io.Copy(dst, src)
 
-	if _, err := io.Copy(dst, src); err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to copy image"})
-	}
-
-	// Buat URL image (pastikan BaseURL kamu sudah didefinisikan)
-	imageURL := BaseURL + "/assets/temp/" + filename
+	// Buat URL yang dikembalikan ke frontend
+	baseURL := c.Scheme() + "://" + c.Request().Host
+	imageURL := baseURL + "/assets/temp/" + filename
 
 	return c.JSON(http.StatusOK, echo.Map{
 		"message":  "Image uploaded successfully",
@@ -1269,12 +1344,12 @@ func CalculateReservation(c echo.Context) error {
 func CreateReservation(c echo.Context) error {
 	var req ReservationRequestBody
 
-	// Bind JSON ke struct
+	// Bind JSON
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	// Validasi
+	// Validasi dasar
 	if req.UserID <= 0 || req.Name == "" || req.PhoneNumber == "" || req.Company == "" || len(req.Rooms) == 0 {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
@@ -1305,7 +1380,7 @@ func CreateReservation(c echo.Context) error {
 		}
 	}
 
-	// Mulai transaksi db
+	// Mulai transaksi
 	tx, err := db.Begin()
 	if err != nil {
 		log.Println("Error starting transaction:", err)
@@ -1334,7 +1409,11 @@ func CreateReservation(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 	}
 
-	// Loop setiap room untuk insert detail
+	// Variabel untuk subtotal
+	var subtotalSnack float64
+	var subtotalRoom float64
+
+	// Loop tiap room
 	for _, room := range req.Rooms {
 		var roomTable Room
 		err = tx.QueryRow(`
@@ -1351,7 +1430,6 @@ func CreateReservation(c echo.Context) error {
 			&roomTable.UpdatedAt,
 		)
 		if err != nil {
-			log.Println("Error selecting room:", err)
 			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 		}
 
@@ -1367,9 +1445,17 @@ func CreateReservation(c echo.Context) error {
 			&snackTable.Category,
 		)
 		if err != nil {
-			log.Println("Error selecting snack:", err)
 			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 		}
+
+		// Hitung durasi dan total harga
+		durationMinute := int(room.EndTime.Sub(room.StartTime).Minutes())
+		totalRoom := (float64(durationMinute) / 60.0) * roomTable.PricePerHour
+		totalSnack := float64(room.Participant) * snackTable.Price
+
+		// Tambahkan ke subtotal
+		subtotalRoom += totalRoom
+		subtotalSnack += totalSnack
 
 		// Insert ke reservation_details
 		_, err = tx.Exec(`
@@ -1377,24 +1463,46 @@ func CreateReservation(c echo.Context) error {
 				reservation_id,
 				room_id, room_name, room_price,
 				snack_id, snack_name, snack_price,
-				start_at, end_at, created_at, updated_at
+				duration_minute, total_participants,
+				total_room, total_snack,
+				start_at, end_at,
+				created_at, updated_at
 			)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())
 		`,
 			reservationID,
 			room.ID, roomTable.Name, roomTable.PricePerHour,
 			room.SnackID, snackTable.Name, snackTable.Price,
+			durationMinute, room.Participant,
+			totalRoom, totalSnack,
 			room.StartTime, room.EndTime,
 		)
 		if err != nil {
 			log.Println("Error inserting reservation detail:", err)
 			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 		}
+
+		// Update subtotal dan total di tabel reservations
+		total := subtotalRoom + subtotalSnack
+		_, err = tx.Exec(`
+			UPDATE reservations
+			SET subtotal_room = $1,
+				subtotal_snack = $2,
+				duration_minute = $3,
+				total = $4,
+				total_participants = $5,
+				add_snack = $6,
+				updated_at = NOW()
+			WHERE id = $7
+		`, subtotalRoom, subtotalSnack, durationMinute, total, room.Participant, room.AddSnack, reservationID)
+		if err != nil {
+			log.Println("Error updating reservation totals:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
 	}
 
-	// sukses
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Reservation created successfully",
+		"message": "reservation created successfully",
 	})
 }
 
