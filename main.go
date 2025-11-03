@@ -230,6 +230,96 @@ type ReservationHistoryRoomDetail struct {
 	TotalSnack float64 `json:"totalSnack"`
 }
 
+type UpdateReservationRequest struct {
+	ReservationID int    `json:"reservation_id" validate:"required"`
+	Status        string `json:"status" validate:"required,oneof=booked cancel paid"`
+}
+
+type SimpleMessageResponse struct {
+	Message string `json:"message"`
+}
+
+// route GET /reservations/schedules
+type Schedule struct {
+	StartTime string `json:"startTime"`
+	EndTime   string `json:"endTime"`
+	Status    string `json:"status"`
+}
+
+type RoomScheduleInfo struct {
+	ID          string     `json:"id"`
+	RoomName    string     `json:"roomName"`
+	CompanyName string     `json:"companyName"`
+	Schedules   []Schedule `json:"schedules"`
+}
+
+type ScheduleResponse struct {
+	Message   string             `json:"message"`
+	Data      []RoomScheduleInfo `json:"data"`
+	Page      int                `json:"page"`
+	PageSize  int                `json:"pageSize"`
+	TotalPage int                `json:"totalPage"`
+	TotalData int                `json:"totalData"`
+}
+
+type RoomInfo struct {
+	Name         string  `json:"name"`
+	PricePerHour float64 `json:"pricePerHour"`
+	ImageURL     string  `json:"imageURL"`
+	Capacity     int     `json:"capacity"`
+	Type         string  `json:"type"`
+	TotalSnack   float64 `json:"totalSnack"`
+	TotalRoom    float64 `json:"totalRoom"`
+	StartTime    string  `json:"startTime"`
+	EndTime      string  `json:"endTime"`
+	Duration     int     `json:"duration"`
+	Participant  int     `json:"participant"`
+	Snack        *Snack  `json:"snack,omitempty"`
+}
+
+// route GET /dashboard
+type DashboardRoom struct {
+	ID                int     `json:"id"`
+	Name              string  `json:"name"`
+	Omzet             float64 `json:"omzet"`
+	PercentageOfUsage float64 `json:"percentageOfUsage"`
+}
+
+type DashboardResponse struct {
+	Message string `json:"message"`
+	Data    struct {
+		TotalRoom        int             `json:"totalRoom"`
+		TotalVisitor     int             `json:"totalVisitor"`
+		TotalReservation int             `json:"totalReservation"`
+		TotalOmzet       float64         `json:"totalOmzet"`
+		Rooms            []DashboardRoom `json:"rooms"`
+	} `json:"data"`
+}
+
+// route GET /rooms/:id/reservation
+type RoomSchedule struct {
+	ID               int       `json:"id"`
+	StartTime        time.Time `json:"startTime"`
+	EndTime          time.Time `json:"endTime"`
+	Status           string    `json:"status"`
+	TotalParticipant int       `json:"totalParticipant"`
+}
+
+// Add this response types
+type ReservationByIDData struct {
+	Rooms         []RoomInfo   `json:"rooms"`
+	PersonalData  PersonalData `json:"personalData"`
+	SubTotalSnack float64      `json:"subTotalSnack"`
+	SubTotalRoom  float64      `json:"subTotalRoom"`
+	Total         float64      `json:"total"`
+	Status        string       `json:"status"`
+}
+
+type ReservationByIDResponse struct {
+	Message string              `json:"message"`
+	Data    ReservationByIDData `json:"data"`
+}
+
 var BaseURL string = "http://localhost:8080"
 var db *sql.DB
 var JwtSecret []byte
@@ -278,7 +368,6 @@ func main() {
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
 
 	// harus pake auth
-
 	authGroup := e.Group("/")
 	authGroup.Use(middlewareAuth)
 	authGroup.POST("uploads", UploadImage)
@@ -295,6 +384,15 @@ func main() {
 	authGroup.GET("reservation/calculation", CalculateReservation)
 	authGroup.POST("reservation", CreateReservation)
 	authGroup.GET("reservation/history", GetReservationHistory)
+	authGroup.POST("/reservation/status", UpdateReservationStatus)
+	authGroup.GET("/reservation/:id", GetReservationByID)
+	authGroup.GET("/reservations/schedules", GetReservationSchedules)
+
+	// dashboard dan users group tetap menggunakan middlewareAuth
+	authGroup.GET("/dashboard", GetDashboard)
+
+	// Snacks route
+	authGroup.GET("/snacks", GetSnacks)
 
 	// route group users
 	userGroup := e.Group("/users")
@@ -903,40 +1001,154 @@ func UploadImage(c echo.Context) error {
 // (POST /rooms) - Tambah ruangan baru
 // CreateRoom godoc
 // @Summary Create a new room
-// @Description Create a new room
+// @Description Create a new room with image validation (JPG/PNG ≤1MB)
 // @Tags Room
-// @Accept json
+// @Accept multipart/form-data
 // @Produce json
-// @Param room body RoomRequest true "Room details"
-// @Success 200 {object} map[string]interface{}
+// @Param name formData string true "Room name"
+// @Param type formData string true "Room type (small/medium/large)"
+// @Param capacity formData int true "Room capacity"
+// @Param pricePerHour formData number true "Price per hour"
+// @Param image formData file true "Room image (JPG/PNG ≤1MB)"
+// @Success 201 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /rooms [post]
 func CreateRoom(c echo.Context) error {
 	var req RoomRequest
+
+	// Bind JSON body
 	if err := c.Bind(&req); err != nil {
-		// error jika format request tidak sesuai
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	// validasi tipe dan kapasitas ruangan
-	if req.Type != "small" && req.Type != "medium" && req.Type != "large" || req.Capacity <= 0 {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "room type is not valid / capacity must be larger more than 0",
-		})
+	// Basic validation
+	if req.Name == "" || req.Type == "" || req.Capacity <= 0 || req.PricePerHour <= 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room data"})
 	}
 
+	// Prepare imageURL variable (will be stored in DB)
+	imageURL := strings.TrimSpace(req.ImageURL)
+	finalFilename := ""
+	createdInRooms := false
+
+	// If frontend provided imageURL pointing to temp, move it to rooms
+	if imageURL != "" && strings.Contains(imageURL, "/assets/temp/") {
+		tempFilename := filepath.Base(imageURL)
+		tempPath := filepath.Join(".", "assets", "temp", tempFilename)
+
+		// ensure temp exists
+		if _, err := os.Stat(tempPath); err == nil {
+			// ensure rooms dir exists
+			uploadDir := filepath.Join(".", "assets", "rooms")
+			if err := os.MkdirAll(uploadDir, 0755); err != nil {
+				return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error creating upload directory"})
+			}
+
+			// create target filename
+			finalFilename = fmt.Sprintf("%d%s", time.Now().UnixNano(), filepath.Ext(tempFilename))
+			newPath := filepath.Join(uploadDir, finalFilename)
+
+			// try rename, fallback to copy+remove
+			if err := os.Rename(tempPath, newPath); err != nil {
+				// fallback
+				src, err := os.Open(tempPath)
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error processing uploaded image"})
+				}
+				defer src.Close()
+
+				dst, err := os.Create(newPath)
+				if err != nil {
+					return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error processing uploaded image"})
+				}
+				defer dst.Close()
+
+				if _, err = io.Copy(dst, src); err != nil {
+					// cleanup partial file
+					_ = os.Remove(newPath)
+					return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error saving image"})
+				}
+				_ = os.Remove(tempPath)
+			}
+			imageURL = fmt.Sprintf("%s/assets/rooms/%s", BaseURL, finalFilename)
+			createdInRooms = true
+		} else {
+			// temp file not found -> ignore and allow file upload path
+			imageURL = ""
+		}
+	}
+
+	// If no temp-image moved, accept direct multipart upload
+	if imageURL == "" {
+		file, err := c.FormFile("image")
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "image file is required"})
+		}
+
+		// Validate file size (1MB)
+		if file.Size > 1<<20 {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "image file size must be less than 1MB"})
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error opening uploaded file"})
+		}
+		defer src.Close()
+
+		// read header for mime detection
+		buf := make([]byte, 512)
+		n, _ := src.Read(buf)
+		contentType := http.DetectContentType(buf[:n])
+		if contentType != "image/jpeg" && contentType != "image/png" {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid file type, only JPG/PNG allowed"})
+		}
+		// reset reader
+		if _, err := src.Seek(0, 0); err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error processing file"})
+		}
+
+		// ensure rooms dir exists
+		uploadDir := filepath.Join(".", "assets", "rooms")
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error creating upload directory"})
+		}
+
+		finalFilename = fmt.Sprintf("%d%s", time.Now().UnixNano(), filepath.Ext(file.Filename))
+		dstPath := filepath.Join(uploadDir, finalFilename)
+
+		dst, err := os.Create(dstPath)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error creating destination file"})
+		}
+		defer dst.Close()
+
+		if _, err = io.Copy(dst, src); err != nil {
+			_ = os.Remove(dstPath)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error saving file"})
+		}
+
+		imageURL = fmt.Sprintf("%s/assets/rooms/%s", BaseURL, finalFilename)
+		createdInRooms = true
+	}
+
+	// Insert into DB
 	query := `
         INSERT INTO rooms (name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
     `
-	_, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL)
+	_, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, imageURL)
 	if err != nil {
+		// cleanup created file in rooms when DB insert fails
+		if createdInRooms && finalFilename != "" {
+			_ = os.Remove(filepath.Join(".", "assets", "rooms", finalFilename))
+		}
 		log.Println("CreateRoom DB insert error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error saving room data"})
 	}
 
-	return c.JSON(http.StatusCreated, echo.Map{"message": "room created successfully"})
+	return c.JSON(http.StatusCreated, echo.Map{"message": "room created successfully", "imageURL": imageURL})
 }
 
 // (GET /rooms) - List ruangan
@@ -1774,7 +1986,7 @@ func GetReservationByID(c echo.Context) error {
 	rooms := make([]RoomInfo, 0)
 	for rows.Next() {
 		var room RoomInfo
-		var snack SnackInfo
+		var snack Snack
 		var startAt, endAt sql.NullTime
 
 		err := rows.Scan(
@@ -1824,28 +2036,13 @@ func GetReservationByID(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-// Add this response types
-type ReservationByIDData struct {
-	Rooms         []RoomInfo   `json:"rooms"`
-	PersonalData  PersonalData `json:"personalData"`
-	SubTotalSnack float64      `json:"subTotalSnack"`
-	SubTotalRoom  float64      `json:"subTotalRoom"`
-	Total         float64      `json:"total"`
-	Status        string       `json:"status"`
-}
-
-type ReservationByIDResponse struct {
-	Message string              `json:"message"`
-	Data    ReservationByIDData `json:"data"`
-}
-
 // UpdateReservationStatus godoc
 // @Summary Update reservation status
 // @Description Update status of a reservation (booked/canceled/paid)
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param request body UpdateReservationStatusRequest true "Status update request"
+// @Param request body UpdateReservationRequest true "Status update request"
 // @Success 200 {object} map[string]string "message: update status success"
 // @Failure 400 {object} map[string]string "message: bad request/reservation already canceled/paid"
 // @Failure 401 {object} map[string]string "message: unauthorized"
