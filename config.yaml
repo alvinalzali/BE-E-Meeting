@@ -1,0 +1,12 @@
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "password"
+  dbname: "e-meeting"
+jwt:
+  secret: "your-secret-key"
+server:
+  base_url: "http://localhost:8080"
+  default_avatar_url: "/assets/default/img/default_profile.jpg"
+  default_room_url: "/assets/default/img/default_room.jpg"
