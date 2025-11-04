@@ -14,10 +14,17 @@ func NewImageHandler(imageUsecase usecases.ImageUsecase) *ImageHandler {
 	return &ImageHandler{imageUsecase: imageUsecase}
 }
 
-func (h *ImageHandler) RegisterRoutes(e *echo.Group) {
-	e.POST("/uploads", h.UploadImage)
-}
-
+// UploadImage godoc
+// @Summary Save an image
+// @Description Upload an image to temp folder and return its URL
+// @Tags Image
+// @Accept multipart/form-data
+// @Produce json
+// @Param image formData file true "Image file"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /uploads [post]
 func (h *ImageHandler) UploadImage(c echo.Context) error {
 	file, err := c.FormFile("image")
 	if err != nil {

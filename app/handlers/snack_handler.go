@@ -14,10 +14,14 @@ func NewSnackHandler(snackUsecase usecases.SnackUsecase) *SnackHandler {
 	return &SnackHandler{snackUsecase: snackUsecase}
 }
 
-func (h *SnackHandler) RegisterRoutes(e *echo.Group) {
-	e.GET("/snacks", h.GetSnacks)
-}
-
+// GetSnacks godoc
+// @Summary Get all snacks
+// @Description Get all snacks
+// @Tags Snack
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 500 {object} map[string]string
+// @Router /snacks [get]
 func (h *SnackHandler) GetSnacks(c echo.Context) error {
 	snacks, err := h.snackUsecase.GetSnacks()
 	if err != nil {

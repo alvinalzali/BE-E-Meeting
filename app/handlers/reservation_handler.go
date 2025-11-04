@@ -16,15 +16,25 @@ func NewReservationHandler(reservationUsecase usecases.ReservationUsecase) *Rese
 	return &ReservationHandler{reservationUsecase: reservationUsecase}
 }
 
-func (h *ReservationHandler) RegisterRoutes(e *echo.Group) {
-	e.GET("/reservation/calculation", h.CalculateReservation)
-	e.POST("/reservation", h.CreateReservation)
-	e.GET("/reservation/history", h.GetReservationHistory)
-	e.POST("/reservation/status", h.UpdateReservationStatus)
-	e.GET("/reservation/:id", h.GetReservationByID)
-	e.GET("/reservations/schedules", h.GetReservationSchedules)
-}
-
+// CalculateReservation godoc
+// @Summary Calculate reservation
+// @Description Calculate reservation
+// @Tags Reservation
+// @Produce json
+// @Param room_id query string true "Room ID"
+// @Param snack_id query string true "Snack ID"
+// @Param startTime query string true "Start Time"
+// @Param endTime query string true "End Time"
+// @Param participant query string true "Participant"
+// @Param user_id query string true "User ID"
+// @Param name query string true "Name"
+// @Param phoneNumber query string true "Phone Number"
+// @Param company query string true "Company"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /reservation/calculation [get]
 func (h *ReservationHandler) CalculateReservation(c echo.Context) error {
 	roomID, _ := strconv.Atoi(c.QueryParam("room_id"))
 	snackID, _ := strconv.Atoi(c.QueryParam("snack_id"))
@@ -45,6 +55,17 @@ func (h *ReservationHandler) CalculateReservation(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+// CreateReservation godoc
+// @Summary Create a new reservation
+// @Description Create a new reservation
+// @Tags Reservation
+// @Accept json
+// @Produce json
+// @Param request body models.ReservationRequestBody true "Reservation request body"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /reservation [post]
 func (h *ReservationHandler) CreateReservation(c echo.Context) error {
 	var req models.ReservationRequestBody
 	if err := c.Bind(&req); err != nil {
@@ -64,6 +85,18 @@ func (h *ReservationHandler) CreateReservation(c echo.Context) error {
 	})
 }
 
+// GetReservationHistory godoc
+// @Summary Get meeting reservation history
+// @Description Retrieve meeting reservation history filtered by user_id, room_id, or date.
+// @Tags Reservation
+// @Param user_id query string false "User ID"
+// @Param room_id query string false "Room ID"
+// @Param date query string false "Date (YYYY-MM-DD)"
+// @Produce json
+// @Success 200 {object} map[string]interface{} "History retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid query parameter"
+// @Failure 500 {object} map[string]interface{} "Failed to retrieve history"
+// @Router /history [get]
 func (h *ReservationHandler) GetReservationHistory(c echo.Context) error {
 	startDate := c.QueryParam("startDate")
 	endDate := c.QueryParam("endDate")
@@ -88,6 +121,18 @@ func (h *ReservationHandler) GetReservationHistory(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+// GetReservationByID godoc
+// @Summary Detail reservation by ID
+// @Description Get full reservation detail (master + reservation details) by reservation ID
+// @Tags Reservation
+// @Produce json
+// @Param id path int true "Reservation ID"
+// @Success 200 {object} models.ReservationByIDResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /reservation/{id} [get]
 func (h *ReservationHandler) GetReservationByID(c echo.Context) error {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -104,6 +149,19 @@ func (h *ReservationHandler) GetReservationByID(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+// UpdateReservationStatus godoc
+// @Summary Update reservation status
+// @Description Update status of a reservation (booked/canceled/paid)
+// @Tags Reservation
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateReservationRequest true "Status update request"
+// @Success 200 {object} map[string]string "message: update status success"
+// @Failure 400 {object} map[string]string "message: bad request/reservation already canceled/paid"
+// @Failure 401 {object} map[string]string "message: unauthorized"
+// @Failure 404 {object} map[string]string "message: url not found"
+// @Failure 500 {object} map[string]string "message: internal server error"
+// @Router /reservation/status [post]
 func (h *ReservationHandler) UpdateReservationStatus(c echo.Context) error {
 	var req models.UpdateReservationRequest
 	if err := c.Bind(&req); err != nil {
@@ -121,6 +179,23 @@ func (h *ReservationHandler) UpdateReservationStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, echo.Map{"message": "update status success"})
 }
 
+// GetReservationSchedules godoc
+// @Summary Get reservation schedules
+// @Description Get all reservation schedules between date range with pagination
+// @Tags Reservation
+// @Accept json
+// @Produce json
+// @Param startDate query string true "Start date (YYYY-MM-DD)"
+// @Param endDate query string true "End date (YYYY-MM-DD)"
+// @Param page query int false "Page number (default: 1)"
+// @Param pageSize query int false "Page size (default: 10)"
+// @Success 200 {object} models.ScheduleResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security BearerAuth
+// @Router /reservations/schedules [get]
 func (h *ReservationHandler) GetReservationSchedules(c echo.Context) error {
 	startDate := c.QueryParam("startDate")
 	endDate := c.QueryParam("endDate")

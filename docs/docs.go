@@ -9,7 +9,6 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "termsOfService": "http://swagger.io/terms/",
         "contact": {},
         "version": "{{.Version}}"
     },
@@ -54,7 +53,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.DashboardResponse"
+                            "$ref": "#/definitions/models.DashboardResponse"
                         }
                     },
                     "400": {
@@ -151,6 +150,68 @@ const docTemplate = `{
                 }
             }
         },
+        "/login": {
+            "post": {
+                "description": "Login a user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Login a user",
+                "parameters": [
+                    {
+                        "description": "User credentials",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.Login"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/password/reset": {
             "post": {
                 "description": "Request a password reset token to be sent to the user's email",
@@ -171,7 +232,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.ResetRequest"
+                            "$ref": "#/definitions/models.ResetRequest"
                         }
                     }
                 ],
@@ -233,7 +294,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.PasswordConfirmReset"
+                            "$ref": "#/definitions/models.PasswordConfirmReset"
                         }
                     }
                 ],
@@ -288,7 +349,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.User"
+                            "$ref": "#/definitions/models.User"
                         }
                     }
                 ],
@@ -296,7 +357,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/main.User"
+                            "$ref": "#/definitions/models.User"
                         }
                     },
                     "400": {
@@ -340,7 +401,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.ReservationRequestBody"
+                            "$ref": "#/definitions/models.ReservationRequestBody"
                         }
                     }
                 ],
@@ -506,7 +567,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.UpdateReservationRequest"
+                            "$ref": "#/definitions/models.UpdateReservationRequest"
                         }
                     }
                 ],
@@ -582,7 +643,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.ReservationByIDResponse"
+                            "$ref": "#/definitions/models.ReservationByIDResponse"
                         }
                     },
                     "400": {
@@ -674,7 +735,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.ScheduleResponse"
+                            "$ref": "#/definitions/models.ScheduleResponse"
                         }
                     },
                     "400": {
@@ -948,7 +1009,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.RoomRequest"
+                            "$ref": "#/definitions/models.RoomRequest"
                         }
                     }
                 ],
@@ -1108,7 +1169,37 @@ const docTemplate = `{
                 }
             }
         },
-        "/save-image": {
+        "/snacks": {
+            "get": {
+                "description": "Get all snacks",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Snack"
+                ],
+                "summary": "Get all snacks",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/uploads": {
             "post": {
                 "description": "Upload an image to temp folder and return its URL",
                 "consumes": [
@@ -1145,36 +1236,6 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/snacks": {
-            "get": {
-                "description": "Get all snacks",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Snack"
-                ],
-                "summary": "Get all snacks",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
                         }
                     },
                     "500": {
@@ -1284,7 +1345,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.updateUser"
+                            "$ref": "#/definitions/models.UpdateUser"
                         }
                     }
                 ],
@@ -1328,7 +1389,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "main.DashboardResponse": {
+        "models.DashboardResponse": {
             "type": "object",
             "properties": {
                 "data": {
@@ -1337,7 +1398,7 @@ const docTemplate = `{
                         "rooms": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/main.DashboardRoom"
+                                "$ref": "#/definitions/models.DashboardRoom"
                             }
                         },
                         "totalOmzet": {
@@ -1359,7 +1420,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.DashboardRoom": {
+        "models.DashboardRoom": {
             "type": "object",
             "properties": {
                 "id": {
@@ -1376,7 +1437,23 @@ const docTemplate = `{
                 }
             }
         },
-        "main.PasswordConfirmReset": {
+        "models.Login": {
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "description": "login using username or email",
+                    "type": "string"
+                }
+            }
+        },
+        "models.PasswordConfirmReset": {
             "type": "object",
             "required": [
                 "confirm_password",
@@ -1391,7 +1468,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.PersonalData": {
+        "models.PersonalData": {
             "type": "object",
             "properties": {
                 "company": {
@@ -1405,16 +1482,16 @@ const docTemplate = `{
                 }
             }
         },
-        "main.ReservationByIDData": {
+        "models.ReservationByIDData": {
             "type": "object",
             "properties": {
                 "personalData": {
-                    "$ref": "#/definitions/main.PersonalData"
+                    "$ref": "#/definitions/models.PersonalData"
                 },
                 "rooms": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/main.RoomInfo"
+                        "$ref": "#/definitions/models.RoomInfo"
                     }
                 },
                 "status": {
@@ -1431,18 +1508,18 @@ const docTemplate = `{
                 }
             }
         },
-        "main.ReservationByIDResponse": {
+        "models.ReservationByIDResponse": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/main.ReservationByIDData"
+                    "$ref": "#/definitions/models.ReservationByIDData"
                 },
                 "message": {
                     "type": "string"
                 }
             }
         },
-        "main.ReservationRequestBody": {
+        "models.ReservationRequestBody": {
             "type": "object",
             "properties": {
                 "addSnack": {
@@ -1464,7 +1541,7 @@ const docTemplate = `{
                 "rooms": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/main.RoomReservationRequest"
+                        "$ref": "#/definitions/models.RoomReservationRequest"
                     }
                 },
                 "totalParticipants": {
@@ -1476,7 +1553,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.ResetRequest": {
+        "models.ResetRequest": {
             "type": "object",
             "required": [
                 "email"
@@ -1487,7 +1564,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.RoomInfo": {
+        "models.RoomInfo": {
             "type": "object",
             "properties": {
                 "capacity": {
@@ -1512,7 +1589,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "snack": {
-                    "$ref": "#/definitions/main.Snack"
+                    "$ref": "#/definitions/models.Snack"
                 },
                 "startTime": {
                     "type": "string"
@@ -1528,7 +1605,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.RoomRequest": {
+        "models.RoomRequest": {
             "type": "object",
             "properties": {
                 "capacity": {
@@ -1548,7 +1625,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.RoomReservationRequest": {
+        "models.RoomReservationRequest": {
             "type": "object",
             "properties": {
                 "addSnack": {
@@ -1574,7 +1651,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.RoomScheduleInfo": {
+        "models.RoomScheduleInfo": {
             "type": "object",
             "properties": {
                 "companyName": {
@@ -1589,12 +1666,12 @@ const docTemplate = `{
                 "schedules": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/main.Schedule"
+                        "$ref": "#/definitions/models.Schedule"
                     }
                 }
             }
         },
-        "main.Schedule": {
+        "models.Schedule": {
             "type": "object",
             "properties": {
                 "endTime": {
@@ -1608,13 +1685,13 @@ const docTemplate = `{
                 }
             }
         },
-        "main.ScheduleResponse": {
+        "models.ScheduleResponse": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/main.RoomScheduleInfo"
+                        "$ref": "#/definitions/models.RoomScheduleInfo"
                     }
                 },
                 "message": {
@@ -1634,7 +1711,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.Snack": {
+        "models.Snack": {
             "type": "object",
             "properties": {
                 "category": {
@@ -1654,7 +1731,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.UpdateReservationRequest": {
+        "models.UpdateReservationRequest": {
             "type": "object",
             "required": [
                 "reservation_id",
@@ -1674,31 +1751,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.User": {
-            "type": "object",
-            "required": [
-                "email",
-                "name",
-                "password",
-                "username"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "password": {
-                    "description": "password harus ada angka, huruf besar, huruf kecil, dan simbol",
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "main.updateUser": {
+        "models.UpdateUser": {
             "type": "object",
             "properties": {
                 "email": {
@@ -1738,26 +1791,42 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        }
-    },
-    "securityDefinitions": {
-        "BearerAuth": {
-            "description": "Type \"Bearer\" followed by a space and JWT token.",
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
+        },
+        "models.User": {
+            "type": "object",
+            "required": [
+                "email",
+                "name",
+                "password",
+                "username"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "password": {
+                    "description": "password harus ada angka, huruf besar, huruf kecil, dan simbol",
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
         }
     }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
+	Version:          "",
 	Host:             "",
 	BasePath:         "",
 	Schemes:          []string{},
-	Title:            "E-Meeting API",
-	Description:      "This is a sample server for E-Meeting.",
+	Title:            "",
+	Description:      "",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

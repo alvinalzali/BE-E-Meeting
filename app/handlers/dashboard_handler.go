@@ -14,10 +14,21 @@ func NewDashboardHandler(dashboardUsecase usecases.DashboardUsecase) *DashboardH
 	return &DashboardHandler{dashboardUsecase: dashboardUsecase}
 }
 
-func (h *DashboardHandler) RegisterRoutes(e *echo.Group) {
-	e.GET("/dashboard", h.GetDashboard)
-}
-
+// GetDashboard godoc
+// @Summary Get dashboard analytics
+// @Description Get analytics data for paid transactions within date range
+// @Tags Dashboard
+// @Accept json
+// @Produce json
+// @Param startDate query string true "Start date (YYYY-MM-DD)"
+// @Param endDate query string true "End date (YYYY-MM-DD)"
+// @Success 200 {object} models.DashboardResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security BearerAuth
+// @Router /dashboard [get]
 func (h *DashboardHandler) GetDashboard(c echo.Context) error {
 	startDate := c.QueryParam("startDate")
 	endDate := c.QueryParam("endDate")

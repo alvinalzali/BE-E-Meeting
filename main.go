@@ -1,6 +1,7 @@
 package main
 
 import (
+	"BE-E-MEETING/app"
 	"BE-E-MEETING/app/handlers"
 	"BE-E-MEETING/app/repositories"
 	"BE-E-MEETING/app/usecases"
@@ -9,7 +10,6 @@ import (
 	"BE-E-MEETING/pkg/database"
 	"BE-E-MEETING/server"
 	"fmt"
-	"github.com/labstack/echo/v4"
 	"log"
 )
 
@@ -56,15 +56,16 @@ func main() {
 	imageHandler := handlers.NewImageHandler(imageUsecase)
 
 	// Register routes
-	userHandler.RegisterRoutes(e)
-
-	authGroup := e.Group("")
-	authGroup.Use(middleware.JWTAuth(cfg))
-	roomHandler.RegisterRoutes(authGroup)
-	snackHandler.RegisterRoutes(authGroup)
-	reservationHandler.RegisterRoutes(authGroup)
-	dashboardHandler.RegisterRoutes(authGroup)
-	imageHandler.RegisterRoutes(authGroup)
+	app.RegisterRoutes(
+		e,
+		userHandler,
+		roomHandler,
+		snackHandler,
+		reservationHandler,
+		dashboardHandler,
+		imageHandler,
+		middleware.JWTAuth(cfg),
+	)
 
 	// Start server
 	fmt.Println("Server starting on :8080")
