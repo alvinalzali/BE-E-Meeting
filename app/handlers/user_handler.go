@@ -102,7 +102,7 @@ func (h *UserHandler) GetUserByID(c echo.Context) error {
 	}
 	user, err := h.userUsecase.GetUserByID(id)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, echo.Map{"error": "User not found"})
+		return c.JSON(http.StatusNotFound, echo.Map{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, echo.Map{"data": user, "message": "User retrieved successfully"})
 }
