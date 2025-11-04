@@ -11,8 +11,18 @@ import (
 	"BE-E-MEETING/server"
 	"fmt"
 	"log"
+	_ "BE-E-MEETING/docs"
 )
 
+// @title E-Meeting API
+// @version 1.0
+// @description This is a sample server for E-Meeting.
+// @termsOfService http://swagger.io/terms/
+
+// @securityDefinitions.apikey  BearerAuth
+// @in                          header
+// @name                        Authorization
+// @description                 Type "Bearer" followed by a space and JWT token.
 func main() {
 	// Load configuration
 	cfg, err := config.LoadConfig("config.yaml")
