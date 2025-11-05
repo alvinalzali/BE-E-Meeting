@@ -361,6 +361,8 @@ func main() {
 	//assets
 	e.Static("/assets", "./assets")
 
+	// debug endpoints removed - keep routes minimal and secured in production
+
 	// route for login, register, password reset
 	e.POST("/login", login)
 	e.POST("/register", RegisterUser)
@@ -376,6 +378,7 @@ func main() {
 	authGroup.POST("rooms", CreateRoom)
 	authGroup.GET("rooms", GetRooms)
 	authGroup.GET("rooms/:id", GetRoomByID)
+	authGroup.GET("rooms/:id/reservation", GetRoomReservationSchedule)
 	authGroup.PUT("rooms/:id", UpdateRoom)
 	authGroup.DELETE("rooms/:id", DeleteRoom)
 	authGroup.GET("snacks", GetSnacks)
@@ -384,15 +387,12 @@ func main() {
 	authGroup.GET("reservation/calculation", CalculateReservation)
 	authGroup.POST("reservation", CreateReservation)
 	authGroup.GET("reservation/history", GetReservationHistory)
-	authGroup.POST("/reservation/status", UpdateReservationStatus)
-	authGroup.GET("/reservation/:id", GetReservationByID)
-	authGroup.GET("/reservations/schedules", GetReservationSchedules)
+	authGroup.PATCH("reservation/status", UpdateReservationStatus)
+	authGroup.GET("reservations/schedules", GetReservationSchedules)
+	authGroup.GET("reservation/:id", GetReservationByID)
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
-	authGroup.GET("/dashboard", GetDashboard)
-
-	// Snacks route
-	authGroup.GET("/snacks", GetSnacks)
+	authGroup.GET("dashboard", GetDashboard)
 
 	// route group users
 	userGroup := e.Group("/users")
@@ -1235,9 +1235,21 @@ func GetRooms(c echo.Context) error {
 	var rooms []Room
 	for rows.Next() {
 		var r Room
-		if err := rows.Scan(&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour, &r.PictureURL, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		var createdAt sql.NullTime
+		var updatedAt sql.NullTime
+		if err := rows.Scan(&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour, &r.PictureURL, &createdAt, &updatedAt); err != nil {
 			log.Println("GetRooms scan error:", err)
 			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+		if createdAt.Valid {
+			r.CreatedAt = createdAt.Time
+		} else {
+			r.CreatedAt = time.Time{}
+		}
+		if updatedAt.Valid {
+			r.UpdatedAt = updatedAt.Time
+		} else {
+			r.UpdatedAt = time.Time{}
 		}
 		rooms = append(rooms, r)
 	}
@@ -1277,10 +1289,22 @@ func GetRoomByID(c echo.Context) error {
         FROM rooms WHERE id = $1
     `
 	var r Room
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
 	err = db.QueryRow(query, id).Scan(
 		&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour,
-		&r.PictureURL, &r.CreatedAt, &r.UpdatedAt,
+		&r.PictureURL, &createdAt, &updatedAt,
 	)
+	if createdAt.Valid {
+		r.CreatedAt = createdAt.Time
+	} else {
+		r.CreatedAt = time.Time{}
+	}
+	if updatedAt.Valid {
+		r.UpdatedAt = updatedAt.Time
+	} else {
+		r.UpdatedAt = time.Time{}
+	}
 
 	if err == sql.ErrNoRows {
 		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
@@ -2048,13 +2072,21 @@ func GetReservationByID(c echo.Context) error {
 // @Failure 401 {object} map[string]string "message: unauthorized"
 // @Failure 404 {object} map[string]string "message: url not found"
 // @Failure 500 {object} map[string]string "message: internal server error"
-// @Router /reservation/status [post]
+// @Router /reservation/status [patch]
 func UpdateReservationStatus(c echo.Context) error {
 	var req UpdateReservationRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, SimpleMessageResponse{Message: "invalid request format"})
 	}
 	req.Status = strings.TrimSpace(req.Status)
+	// allow passing reservation id via query param for convenience
+	if req.ReservationID == 0 {
+		if q := c.QueryParam("reservation_id"); q != "" {
+			if id, err := strconv.Atoi(q); err == nil {
+				req.ReservationID = id
+			}
+		}
+	}
 	if req.Status == "" {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "bad request"})
 	}
@@ -2436,18 +2468,36 @@ func GetRoomReservationSchedule(c echo.Context) error {
 		})
 	}
 
-	// Get date filter from query parameter
+	// Support both date and datetime range filters
+	// Prefer start_datetime & end_datetime (RFC3339). If not provided, fall back to date=YYYY-MM-DD
+	startDTStr := c.QueryParam("start_datetime")
+	endDTStr := c.QueryParam("end_datetime")
 	dateStr := c.QueryParam("date")
-	var dateFilter time.Time
-	if dateStr != "" {
-		dateFilter, err = time.Parse("2006-01-02", dateStr)
+
+	var useRange bool
+	var startDT, endDT time.Time
+	if startDTStr != "" && endDTStr != "" {
+		startDT, err = time.Parse(time.RFC3339, startDTStr)
 		if err != nil {
-			return c.JSON(http.StatusBadRequest, echo.Map{
-				"message": "invalid date format, use YYYY-MM-DD",
-			})
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid start_datetime (must be RFC3339)"})
 		}
-	} else {
-		dateFilter = time.Now()
+		endDT, err = time.Parse(time.RFC3339, endDTStr)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid end_datetime (must be RFC3339)"})
+		}
+		useRange = true
+	}
+
+	var dateFilter time.Time
+	if !useRange {
+		if dateStr != "" {
+			dateFilter, err = time.Parse("2006-01-02", dateStr)
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid date format, use YYYY-MM-DD"})
+			}
+		} else {
+			dateFilter = time.Now()
+		}
 	}
 
 	// Check if room exists
@@ -2466,21 +2516,38 @@ func GetRoomReservationSchedule(c echo.Context) error {
 	}
 
 	// Query reservations for the room
-	query := `
-        SELECT 
-            rd.id,
-            rd.start_at,
-            rd.end_at,
-            r.status_reservation,
-            rd.total_participants
-        FROM reservation_details rd
-        JOIN reservations r ON rd.reservation_id = r.id
-        WHERE rd.room_id = $1
-        AND DATE(rd.start_at) = DATE($2)
-        ORDER BY rd.start_at ASC
-    `
-
-	rows, err := db.Query(query, roomID, dateFilter)
+	var rows *sql.Rows
+	if useRange {
+		query := `
+			SELECT
+				rd.id,
+				rd.start_at,
+				rd.end_at,
+				r.status_reservation,
+				rd.total_participants
+			FROM reservation_details rd
+			JOIN reservations r ON rd.reservation_id = r.id
+			WHERE rd.room_id = $1
+			AND (rd.start_at, rd.end_at) OVERLAPS ($2, $3)
+			ORDER BY rd.start_at ASC
+		`
+		rows, err = db.Query(query, roomID, startDT, endDT)
+	} else {
+		query := `
+			SELECT 
+				rd.id,
+				rd.start_at,
+				rd.end_at,
+				r.status_reservation,
+				rd.total_participants
+			FROM reservation_details rd
+			JOIN reservations r ON rd.reservation_id = r.id
+			WHERE rd.room_id = $1
+			AND DATE(rd.start_at) = DATE($2)
+			ORDER BY rd.start_at ASC
+		`
+		rows, err = db.Query(query, roomID, dateFilter)
+	}
 	if err != nil {
 		log.Println("Query error:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{
@@ -2492,37 +2559,58 @@ func GetRoomReservationSchedule(c echo.Context) error {
 	schedules := []RoomSchedule{}
 	for rows.Next() {
 		var schedule RoomSchedule
+		var startAt sql.NullTime
+		var endAt sql.NullTime
+		var status sql.NullString
+		var participants sql.NullInt64
+
 		err := rows.Scan(
 			&schedule.ID,
-			&schedule.StartTime,
-			&schedule.EndTime,
-			&schedule.Status,
-			&schedule.TotalParticipant,
+			&startAt,
+			&endAt,
+			&status,
+			&participants,
 		)
 		if err != nil {
 			log.Println("Row scan error:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{
-				"message": "internal server error",
-			})
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+		if startAt.Valid {
+			schedule.StartTime = startAt.Time
+		}
+		if endAt.Valid {
+			schedule.EndTime = endAt.Time
+		}
+		if status.Valid {
+			schedule.Status = status.String
+		}
+		if participants.Valid {
+			schedule.TotalParticipant = int(participants.Int64)
 		}
 		schedules = append(schedules, schedule)
 	}
 
 	// Get room details
 	var room Room
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
 	err = db.QueryRow(`
-        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at 
-        FROM rooms 
-        WHERE id = $1
-    `, roomID).Scan(
+		SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at 
+		FROM rooms 
+		WHERE id = $1
+	`, roomID).Scan(
 		&room.ID, &room.Name, &room.RoomType, &room.Capacity,
-		&room.PricePerHour, &room.PictureURL, &room.CreatedAt, &room.UpdatedAt,
+		&room.PricePerHour, &room.PictureURL, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		log.Println("Room details query error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{
-			"message": "internal server error",
-		})
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+	if createdAt.Valid {
+		room.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		room.UpdatedAt = updatedAt.Time
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{

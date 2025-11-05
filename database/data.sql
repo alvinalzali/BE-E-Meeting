@@ -44,3 +44,9 @@ INSERT INTO reservation_details (
 VALUES
 (1, 2, 'Room Fuji', 300000, 2, 'Lunch Bento', 75000, 120, 10,
  NOW(), NOW() + INTERVAL '2 hours', 750000, 300000);
+
+{
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzYyMzQyNDY5LCJpYXQiOjE3NjIzMTI0Njl9.8sNLFgbl9qRB42kWKqcoHis1cpUkjhl9767a-QtPSgM",
+    "message": "Login successful",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzYyOTE3MjY5LCJpYXQiOjE3NjIzMTI0Njl9.gzqK_dCmSW9emjfYyzYfZpy3EUSlzMMNTDEn140-t_I"
+}
