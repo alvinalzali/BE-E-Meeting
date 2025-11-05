@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -86,6 +87,7 @@ type PasswordConfirmReset struct {
 	NewPassword     string `json:"new_password" validate:"required"`
 }
 
+// Request body untuk endpoint rooms
 type RoomRequest struct {
 	Name         string  `json:"name"`
 	Type         string  `json:"type"`
@@ -94,14 +96,7 @@ type RoomRequest struct {
 	ImageURL     string  `json:"imageURL"`
 }
 
-type RoomSearchRequest struct {
-	Filter     string `json:"filter,omitempty"`       // sama seperti name search
-	RoomTypeID string `json:"room_type_id,omitempty"` // "small","medium","large"
-	Capacity   int    `json:"capacity,omitempty"`
-	Page       int    `json:"page,omitempty"`
-	PageSize   int    `json:"pageSize,omitempty"`
-}
-
+// Response struct untuk rooms
 type Room struct {
 	ID           int       `json:"id"`
 	Name         string    `json:"name"`
@@ -113,6 +108,7 @@ type Room struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+// Response struct untuk snacks
 type Snack struct {
 	ID       int     `json:"id"`
 	Name     string  `json:"name"`
@@ -121,33 +117,117 @@ type Snack struct {
 	Category string  `json:"category"`
 }
 
-type SnackInfo struct {
-	ID       int     `json:"id"`
-	Name     string  `json:"name"`
-	Unit     string  `json:"unit"`
-	Price    float64 `json:"price"`
-	Category string  `json:"category"`
+// struct response CalculateReservation
+// Room detail dalam response perhitungan reservasi
+type RoomCalculationDetail struct {
+	Name          string    `json:"name"`
+	PricePerHour  float64   `json:"pricePerHour"`
+	ImageURL      string    `json:"imageURL"`
+	Capacity      int       `json:"capacity"`
+	Type          string    `json:"type"`
+	SubTotalSnack float64   `json:"subTotalSnack"`
+	SubTotalRoom  float64   `json:"subTotalRoom"`
+	StartTime     time.Time `json:"startTime"`
+	EndTime       time.Time `json:"endTime"`
+	Duration      int       `json:"duration"`
+	Participant   int       `json:"participant"`
+	Snack         Snack     `json:"snack"`
 }
 
-type RoomInfo struct {
-	Name         string     `json:"name"`
-	PricePerHour float64    `json:"pricePerHour"`
-	ImageURL     string     `json:"imageURL"`
-	Capacity     int        `json:"capacity"`
-	Type         string     `json:"type"`
-	TotalSnack   float64    `json:"totalSnack"`
-	TotalRoom    float64    `json:"totalRoom"`
-	StartTime    string     `json:"startTime"`
-	EndTime      string     `json:"endTime"`
-	Duration     int        `json:"duration"`
-	Participant  int        `json:"participant"`
-	Snack        *SnackInfo `json:"snack,omitempty"`
-}
-
+// Data personal yang disertakan pada reservasi
 type PersonalData struct {
 	Name        string `json:"name"`
 	PhoneNumber string `json:"phoneNumber"`
 	Company     string `json:"company"`
+}
+
+type CalculateReservationResponse struct {
+	Message string                   `json:"message"`
+	Data    CalculateReservationData `json:"data"`
+}
+
+type CalculateReservationData struct {
+	Rooms         []RoomCalculationDetail `json:"rooms"`
+	PersonalData  PersonalData            `json:"personalData"`
+	SubTotalRoom  float64                 `json:"subTotalRoom"`
+	SubTotalSnack float64                 `json:"subTotalSnack"`
+	Total         float64                 `json:"total"`
+}
+
+type RoomReservationRequest struct {
+	ID          int       `json:"roomID"` // agar lebih eksplisit
+	StartTime   time.Time `json:"startTime"`
+	EndTime     time.Time `json:"endTime"`
+	Participant int       `json:"participant"` // peserta per ruangan
+	SnackID     int       `json:"snackID"`
+	AddSnack    bool      `json:"addSnack"` // kalau ruangan ini pakai snack atau tidak
+}
+
+type ReservationRequestBody struct {
+	UserID            int                      `json:"userID"`
+	Name              string                   `json:"name"`
+	PhoneNumber       string                   `json:"phoneNumber"`
+	Company           string                   `json:"company"`
+	Notes             string                   `json:"notes"`
+	TotalParticipants int                      `json:"totalParticipants"` // total keseluruhan peserta
+	AddSnack          bool                     `json:"addSnack"`          // apakah reservasi ini melibatkan snack
+	Rooms             []RoomReservationRequest `json:"rooms"`
+}
+
+// Response struct history
+type HistoryResponse struct {
+	Message string               `json:"message"`
+	Data    []ReservationHistory `json:"data"`
+}
+
+// Data struct h
+type ReservationHistory struct {
+	ID            int     `json:"id"`
+	Name          string  `json:"name"`
+	PhoneNumber   float64 `json:"phoneNumber"`
+	Company       string  `json:"company"`
+	SubTotalSnack float64 `json:"subTotalSnack"`
+	SubTotalRoom  float64 `json:"subTotalRoom"`
+	GrandTotal    float64 `json:"grandTotal"`
+	Type          string  `json:"type"`
+	Status        string  `json:"status"`
+	CreatedAt     string  `json:"createdAt"`
+}
+
+// Struct Reservation History :
+// Untuk respons utama
+type ReservationHistoryResponse struct {
+	Message   string                   `json:"message"`
+	Data      []ReservationHistoryData `json:"data"`
+	Page      int                      `json:"page"`
+	PageSize  int                      `json:"pageSize"`
+	TotalPage int                      `json:"totalPage"`
+	TotalData int                      `json:"totalData"`
+}
+
+// Data utama per reservation
+type ReservationHistoryData struct {
+	ID            int                            `json:"id"`
+	Name          string                         `json:"name"`
+	PhoneNumber   string                         `json:"phoneNumber"`
+	Company       string                         `json:"company"`
+	SubTotalSnack float64                        `json:"subTotalSnack"`
+	SubTotalRoom  float64                        `json:"subTotalRoom"`
+	Total         float64                        `json:"total"`
+	Status        string                         `json:"status"`
+	CreatedAt     time.Time                      `json:"createdAt"`
+	UpdatedAt     sql.NullTime                   `json:"updatedAt"`
+	Rooms         []ReservationHistoryRoomDetail `json:"rooms"`
+}
+
+// Detail room di dalam reservation
+type ReservationHistoryRoomDetail struct {
+	ID         int     `json:"id"`
+	Price      float64 `json:"price"`
+	Name       string  `json:"name"`
+	Type       string  `json:"type"`
+	TotalRoom  float64 `json:"totalRoom"`
+	TotalSnack float64 `json:"totalSnack"`
 }
 
 type UpdateReservationRequest struct {
@@ -182,6 +262,21 @@ type ScheduleResponse struct {
 	TotalData int                `json:"totalData"`
 }
 
+type RoomInfo struct {
+	Name         string  `json:"name"`
+	PricePerHour float64 `json:"pricePerHour"`
+	ImageURL     string  `json:"imageURL"`
+	Capacity     int     `json:"capacity"`
+	Type         string  `json:"type"`
+	TotalSnack   float64 `json:"totalSnack"`
+	TotalRoom    float64 `json:"totalRoom"`
+	StartTime    string  `json:"startTime"`
+	EndTime      string  `json:"endTime"`
+	Duration     int     `json:"duration"`
+	Participant  int     `json:"participant"`
+	Snack        *Snack  `json:"snack,omitempty"`
+}
+
 // route GET /dashboard
 type DashboardRoom struct {
 	ID                int     `json:"id"`
@@ -210,11 +305,26 @@ type RoomSchedule struct {
 	TotalParticipant int       `json:"totalParticipant"`
 }
 
+// Add this response types
+type ReservationByIDData struct {
+	Rooms         []RoomInfo   `json:"rooms"`
+	PersonalData  PersonalData `json:"personalData"`
+	SubTotalSnack float64      `json:"subTotalSnack"`
+	SubTotalRoom  float64      `json:"subTotalRoom"`
+	Total         float64      `json:"total"`
+	Status        string       `json:"status"`
+}
+
+type ReservationByIDResponse struct {
+	Message string              `json:"message"`
+	Data    ReservationByIDData `json:"data"`
+}
+
 var BaseURL string = "http://localhost:8080"
-var ImageURL string
 var db *sql.DB
 var JwtSecret []byte
-var DefaultAvatar string = BaseURL + "/assets/default/img/default_profile.jpg"
+var DefaultAvatarURL string = BaseURL + "/assets/default/img/default_profile.jpg"
+var DefaultRoomURL string = BaseURL + "/assets/default/img/default_room.jpg"
 
 // @title E-Meeting API
 // @version 1.0
@@ -251,42 +361,44 @@ func main() {
 	//assets
 	e.Static("/assets", "./assets")
 
+	// debug endpoints removed - keep routes minimal and secured in production
+
 	// route for login, register, password reset
 	e.POST("/login", login)
 	e.POST("/register", RegisterUser)
-	e.POST("/password/reset_request", PasswordReset)
+	e.POST("password/reset_request", PasswordReset)
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
-	e.POST("/uploads", UploadImage)
 
-	// Rooms routes dengan middlewareAPIContract untuk setiap endpoint
-	e.POST("/rooms", CreateRoom, middlewareAPIContract)
-	e.GET("/rooms", GetRooms, middlewareAPIContract)
-	e.GET("/rooms/:id", GetRoomByID, middlewareAPIContract)
-	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, middlewareAPIContract)
-	e.PUT("/rooms/:id", UpdateRoom, middlewareAPIContract)
-	e.DELETE("/rooms/:id", DeleteRoom, middlewareAPIContract)
+	// harus pake auth
+	authGroup := e.Group("/")
+	authGroup.Use(middlewareAuth)
+	authGroup.POST("uploads", UploadImage)
 
-	// Snacks route
-	e.GET("/snacks", GetSnacks, middlewareAPIContract)
+	// route for rooms
+	authGroup.POST("rooms", CreateRoom)
+	authGroup.GET("rooms", GetRooms)
+	authGroup.GET("rooms/:id", GetRoomByID)
+	authGroup.GET("rooms/:id/reservation", GetRoomReservationSchedule)
+	authGroup.PUT("rooms/:id", UpdateRoom)
+	authGroup.DELETE("rooms/:id", DeleteRoom)
+	authGroup.GET("snacks", GetSnacks)
 
-	// Public routes tidak perlu middleware
-	e.POST("/login", login)
-	e.POST("/register", RegisterUser)
-	e.POST("/password/reset_request", PasswordReset)
-	e.PUT("/password/reset/:id", PasswordResetId)
-	e.POST("/uploads", UploadImage)
-
-	//routes reservation
-	// e.GET("/reservation/calculation", CalculateReservation)
-	e.POST("/reservation/status", UpdateReservationStatus)
-	e.GET("/reservation/:id", GetReservationByID)
-	e.GET("/reservations/schedules", GetReservationSchedules, middlewareAuth)
+	// route for reservations
+	authGroup.GET("reservation/calculation", CalculateReservation)
+	authGroup.POST("reservation", CreateReservation)
+	authGroup.GET("reservation/history", GetReservationHistory)
+	authGroup.PATCH("reservation/status", UpdateReservationStatus)
+	authGroup.GET("reservations/schedules", GetReservationSchedules)
+	authGroup.GET("reservation/:id", GetReservationByID)
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
-	e.GET("/dashboard", GetDashboard, middlewareAuth)
+	authGroup.GET("dashboard", GetDashboard)
 
+	// route group users
 	userGroup := e.Group("/users")
 	userGroup.Use(middlewareAuth)
+
+	// route users
 	userGroup.GET("/:id", GetUserByID)
 	userGroup.PUT("/:id", UpdateUserByID)
 
@@ -309,18 +421,6 @@ func connectDB(username, password, dbname, host string, port int) *sql.DB {
 	return db
 }
 
-// login godoc
-// @Summary User login
-// @Description Authenticate user and return JWT tokens
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param login body Login true "Login credentials"
-// @Success 200 {object} map[string]string
-// @Failure 400 {object} map[string]string
-// @Failure 401 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /login [post]
 func login(c echo.Context) error {
 	var loginData Login
 
@@ -332,7 +432,6 @@ func login(c echo.Context) error {
 	var sqlStatement string
 	if isEmail(loginData.Username) {
 		sqlStatement = `SELECT username, password_hash FROM users WHERE email=$1`
-
 	} else {
 		sqlStatement = `SELECT username, password_hash FROM users WHERE username=$1`
 	}
@@ -377,9 +476,18 @@ func login(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Token Generation Failed"
 	}
 
+	// ambil id dari tabel users
+	var user_id string
+	err = db.QueryRow(`SELECT id FROM users WHERE username=$1`, storedUsername).Scan(&user_id)
+	if err != nil {
+		// error 500
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Database Error"
+	}
+
 	// return token
 	c.Response().Header().Set("Authorization", "Bearer "+token)
 	c.Response().Header().Set("Refresh-Token", "Bearer "+refreshToken)
+	c.Response().Header().Set("id", user_id)
 
 	// apa yang dimasukan ke cookie?
 
@@ -647,50 +755,6 @@ func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// fungsi middleware untuk validasi header dan JWT khusus API rooms/snacks
-func middlewareAPIContract(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		// Validasi Accept header (jika disertakan harus JSON)
-		accept := c.Request().Header.Get("Accept")
-		if accept != "" && !strings.Contains(strings.ToLower(accept), "application/json") {
-			return c.JSON(http.StatusBadRequest, echo.Map{"message": "Invalid Accept header, must be application/json"})
-		}
-
-		// Validasi Content-Type untuk method yang mengirim body
-		if c.Request().Method == http.MethodPost || c.Request().Method == http.MethodPut || c.Request().Method == http.MethodPatch {
-			ct := c.Request().Header.Get("Content-Type")
-			if ct != "" && !strings.Contains(strings.ToLower(ct), "application/json") && !strings.HasPrefix(strings.ToLower(ct), "multipart/form-data") {
-				return c.JSON(http.StatusBadRequest, echo.Map{"message": "Invalid Content-Type, must be application/json or multipart/form-data"})
-			}
-		}
-
-		// Periksa Authorization Bearer token (wajib untuk semua route di group)
-		authHeader := c.Request().Header.Get("Authorization")
-		if authHeader == "" {
-			return c.JSON(http.StatusUnauthorized, echo.Map{"message": "Missing authorization token"})
-		}
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			return c.JSON(http.StatusUnauthorized, echo.Map{"message": "Invalid authorization format"})
-		}
-		tokenString := parts[1]
-
-		claims := &Claims{}
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
-			return JwtSecret, nil
-		})
-		if err != nil || !token.Valid {
-			return c.JSON(http.StatusUnauthorized, echo.Map{"message": "Invalid or expired token"})
-		}
-
-		// set claims ke context untuk handler jika perlu
-		c.Set("username", claims.Username)
-		c.Set("role", claims.Role)
-
-		return next(c)
-	}
-}
-
 // GetUserByID godoc
 // @Summary Get user by ID
 // @Description Retrieve user details by user ID
@@ -729,7 +793,7 @@ func GetUserByID(c echo.Context) error {
 
 	//jika user.Avatar_url kosong, ganti ke default
 	if user.Avatar_url == "" {
-		user.Avatar_url = DefaultAvatar
+		user.Avatar_url = DefaultAvatarURL
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{
@@ -755,7 +819,6 @@ func GetUserByID(c echo.Context) error {
 // @Router /users/{id} [put]
 func UpdateUserByID(c echo.Context) error {
 	id := c.Param("id")
-
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
@@ -766,30 +829,108 @@ func UpdateUserByID(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request body"})
 	}
 
-	//masukan update_at dengan waktu sekarang
 	user.Updated_at = time.Now().Format(time.RFC3339)
 
-	//jika user upload gambar baru, load dari variabel global imageURL
-	if ImageURL != "" {
-		user.Avatar_url = ImageURL
-	}
-
-	sqlStatement := `UPDATE users SET username=$1, email=$2, name=$3, avatar_url=$4, lang=$5, role=$6, status=$7, updated_at=$8 WHERE id=$9`
-	_, err = db.Exec(sqlStatement, user.Username, user.Email, user.Name, user.Avatar_url, user.Lang, user.Role, user.Status, user.Updated_at, idInt)
+	// --- Ambil data user saat ini ---
+	var currentUser updateUser
+	query := `SELECT username, email, avatar_url FROM users WHERE id=$1`
+	err = db.QueryRow(query, idInt).Scan(&currentUser.Username, &currentUser.Email, &currentUser.Avatar_url)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error", "detail": err.Error()})
+		log.Println("Error fetching current user:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "User not found"})
 	}
 
-	//hapus gambar di temp melalui variabel global ImageURL
-	if ImageURL != "" {
-		filePath := strings.TrimPrefix(ImageURL, "/")
-		err = os.Remove(BaseURL + "/assets/temp/" + filePath)
+	// === Cek Username ===
+	if user.Username != "" && user.Username != currentUser.Username {
+		var exists bool
+		err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 AND id<>$2)`, user.Username, idInt).Scan(&exists)
 		if err != nil {
-			fmt.Println("Failed to delete temp image:", err)
+			log.Println("Error checking username:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database check failed"})
 		}
-		// reset variabel global ImageURL
-		ImageURL = ""
+		if exists {
+			log.Println("Username already taken, keeping old username.")
+			user.Username = currentUser.Username
+		}
+	} else {
+		user.Username = currentUser.Username
 	}
+
+	// === Cek Email ===
+	if user.Email != "" && user.Email != currentUser.Email {
+		var exists bool
+		err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM users WHERE email=$1 AND id<>$2)`, user.Email, idInt).Scan(&exists)
+		if err != nil {
+			log.Println("Error checking email:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database check failed"})
+		}
+		if exists {
+			log.Println("Email already taken, keeping old email.")
+			user.Email = currentUser.Email
+		}
+	} else {
+		user.Email = currentUser.Email
+	}
+
+	// === Jika ada avatar baru ===
+	if user.Avatar_url != "" {
+		tempURL := user.Avatar_url
+		fileName := filepath.Base(tempURL)
+
+		os.MkdirAll("./assets/image", os.ModePerm)
+		os.MkdirAll("./assets/image/users", os.ModePerm)
+
+		tempPath := filepath.Join("./assets/temp", fileName)
+		finalPath := filepath.Join("./assets/image/users", fileName)
+
+		// Pindahkan file
+		err = os.Rename(tempPath, finalPath)
+		if err != nil {
+			log.Println("Failed to move image:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to move image"})
+		}
+
+		// Buat URL final
+		baseURL := c.Scheme() + "://" + c.Request().Host
+		user.Avatar_url = baseURL + "/assets/image/users/" + fileName
+
+		// Hapus avatar lama (jika bukan default)
+		if currentUser.Avatar_url != "" && !strings.Contains(currentUser.Avatar_url, "default") {
+			oldFile := filepath.Base(currentUser.Avatar_url)
+			os.Remove("./assets/image/users/" + oldFile)
+		}
+	} else {
+		// ambil nilai avatar lama pada database users
+		// jika ada, maka gunakan nilai avatar lama
+		// jika tidak ada, maka gunakan nilai default
+		var avatar_url string
+		err = db.QueryRow(`SELECT avatar_url FROM users WHERE id=$1`, idInt).Scan(&avatar_url)
+		if err != nil {
+			log.Println("Error fetching avatar_url:", err)
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error"})
+		}
+		if avatar_url != "" {
+			user.Avatar_url = avatar_url
+		}
+
+	}
+
+	// --- Update user ---
+	sqlStatement := `
+		UPDATE users 
+		SET username=$1, email=$2, name=$3, avatar_url=$4, 
+			lang=$5, role=$6, status=$7, updated_at=$8 
+		WHERE id=$9
+	`
+	_, err = db.Exec(sqlStatement,
+		user.Username, user.Email, user.Name, user.Avatar_url,
+		user.Lang, user.Role, user.Status, user.Updated_at, idInt,
+	)
+	if err != nil {
+		log.Println("Error updating user:", err)
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error"})
+	}
+
 	return c.JSON(http.StatusOK, echo.Map{
 		"message": "User updated successfully",
 		"data":    user,
@@ -799,7 +940,7 @@ func UpdateUserByID(c echo.Context) error {
 // fungsi memasukan gambar ke folder temp dan mengembalikan url gambarnya
 // UploadImage godoc
 // @Summary Save an image
-// @Description Save an image
+// @Description Upload an image to temp folder and return its URL
 // @Tags Image
 // @Accept multipart/form-data
 // @Produce json
@@ -825,35 +966,31 @@ func UploadImage(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "File size is too large"})
 	}
 
-	// Buka file upload
 	src, err := file.Open()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to open image file"})
 	}
 	defer src.Close()
 
-	// Pastikan folder temp ada
+	// Buat folder temp jika belum ada
 	os.MkdirAll("./assets/temp", os.ModePerm)
 
-	// Buat nama file baru berdasarkan timestamp
+	// Buat nama unik
 	ext := filepath.Ext(file.Filename)
-	timestamp := time.Now().Unix()
-	filename := fmt.Sprintf("%d%s", timestamp, ext)
-	filePath := "./assets/temp/" + filename
+	filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+	tempPath := filepath.Join("./assets/temp", filename)
 
-	// Simpan ke folder
-	dst, err := os.Create(filePath)
+	// Simpan file
+	dst, err := os.Create(tempPath)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to save image"})
 	}
 	defer dst.Close()
+	io.Copy(dst, src)
 
-	if _, err := io.Copy(dst, src); err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to copy image"})
-	}
-
-	// Buat URL image (pastikan BaseURL kamu sudah didefinisikan)
-	imageURL := BaseURL + "/assets/temp/" + filename
+	// Buat URL yang dikembalikan ke frontend
+	baseURL := c.Scheme() + "://" + c.Request().Host
+	imageURL := baseURL + "/assets/temp/" + filename
 
 	return c.JSON(http.StatusOK, echo.Map{
 		"message":  "Image uploaded successfully",
@@ -1017,110 +1154,77 @@ func CreateRoom(c echo.Context) error {
 // (GET /rooms) - List ruangan
 // GetRooms godoc
 // @Summary Get a list of rooms
-// @Description Get a list of rooms, supports both query params and JSON body
+// @Description Get a list of rooms
 // @Tags Room
-// @Accept json
 // @Produce json
-// @Param filter query string false "Room name filter (via query)"
-// @Param type query string false "Room type (via query)"
-// @Param capacity query int false "Room capacity (via query)"
-// @Param page query int false "Page number (via query)"
-// @Param pageSize query int false "Page size (via query)"
-// @Param searchBody body RoomSearchRequest false "Search criteria (via JSON body)"
+// @Param name query string false "Room name"
+// @Param type query string false "Room type"
+// @Param capacity query string false "Room capacity"
+// @Param page query int false "Page number"
+// @Param pageSize query int false "Page size"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /rooms [get]
 func GetRooms(c echo.Context) error {
-	// Initialize request struct
-	var req RoomSearchRequest
+	name := c.QueryParam("name")
+	roomType := c.QueryParam("type")
+	capacityParam := c.QueryParam("capacity")
+	pageParam := c.QueryParam("page")
+	pageSizeParam := c.QueryParam("pageSize")
 
-	// Check Content-Type header
-	ct := c.Request().Header.Get("Content-Type")
-
-	// Handle JSON body if Content-Type is application/json
-	if strings.HasPrefix(ct, "application/json") {
-		if err := c.Bind(&req); err != nil {
-			return c.JSON(http.StatusBadRequest, echo.Map{
-				"message": "invalid request format",
-				"error":   err.Error(),
-			})
-		}
-	} else {
-		// Handle query parameters
-		if v := c.QueryParam("filter"); v != "" {
-			req.Filter = v
-		}
-		if v := c.QueryParam("room_type_id"); v != "" {
-			req.RoomTypeID = v
-		}
-		if v := c.QueryParam("capacity"); v != "" {
-			if i, err := strconv.Atoi(v); err == nil {
-				req.Capacity = i
-			}
-		}
-		if v := c.QueryParam("page"); v != "" {
-			if i, err := strconv.Atoi(v); err == nil {
-				req.Page = i
-			}
-		}
-		if v := c.QueryParam("pageSize"); v != "" {
-			if i, err := strconv.Atoi(v); err == nil {
-				req.PageSize = i
-			}
-		}
+	// validasi tipe ruangan
+	if roomType != "" && roomType != "small" && roomType != "medium" && roomType != "large" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "room type is not valid"})
 	}
 
-	// Validate page and pageSize
-	if req.Page <= 0 {
-		req.Page = 1
+	page := 1
+	pageSize := 10
+	if p, err := strconv.Atoi(pageParam); err == nil && p > 0 {
+		page = p
 	}
-	if req.PageSize <= 0 {
-		req.PageSize = 10
+	if ps, err := strconv.Atoi(pageSizeParam); err == nil && ps > 0 {
+		pageSize = ps
 	}
-	offset := (req.Page - 1) * req.PageSize
+	offset := (page - 1) * pageSize
 
-	// Build query
 	query := `
-        SELECT id, name, room_type, capacity, price_per_hour, picture_url, 
-               created_at, 
-               COALESCE(updated_at, created_at) as updated_at
+        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
         FROM rooms
         WHERE 1=1
     `
 	var args []interface{}
 	argIndex := 1
 
-	// Add filters
-	if req.Filter != "" {
+	if name != "" {
 		query += fmt.Sprintf(" AND LOWER(name) LIKE LOWER($%d)", argIndex)
-		args = append(args, "%"+req.Filter+"%")
+		args = append(args, "%"+name+"%")
 		argIndex++
 	}
-	if req.RoomTypeID != "" {
+	if roomType != "" {
 		query += fmt.Sprintf(" AND room_type = $%d", argIndex)
-		args = append(args, req.RoomTypeID)
+		args = append(args, roomType)
 		argIndex++
 	}
-	if req.Capacity > 0 {
-		query += fmt.Sprintf(" AND capacity >= $%d", argIndex)
-		args = append(args, req.Capacity)
-		argIndex++
+	if capacityParam != "" {
+		if capVal, err := strconv.Atoi(capacityParam); err == nil {
+			query += fmt.Sprintf(" AND capacity >= $%d", argIndex)
+			args = append(args, capVal)
+			argIndex++
+		}
 	}
 
-	// Get total count
 	countQuery := "SELECT COUNT(*) FROM (" + query + ") AS total"
 	var totalData int
-	if err := db.QueryRow(countQuery, args...).Scan(&totalData); err != nil {
+	err := db.QueryRow(countQuery, args...).Scan(&totalData)
+	if err != nil {
 		log.Println("Count query error:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	// Add pagination
 	query += fmt.Sprintf(" ORDER BY id ASC LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
-	args = append(args, req.PageSize, offset)
+	args = append(args, pageSize, offset)
 
-	// Execute query
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		log.Println("GetRooms query error:", err)
@@ -1128,42 +1232,34 @@ func GetRooms(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	// Process results using sql.NullTime
 	var rooms []Room
 	for rows.Next() {
 		var r Room
+		var createdAt sql.NullTime
 		var updatedAt sql.NullTime
-
-		if err := rows.Scan(
-			&r.ID,
-			&r.Name,
-			&r.RoomType,
-			&r.Capacity,
-			&r.PricePerHour,
-			&r.PictureURL,
-			&r.CreatedAt,
-			&updatedAt,
-		); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour, &r.PictureURL, &createdAt, &updatedAt); err != nil {
 			log.Println("GetRooms scan error:", err)
 			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 		}
-
-		// If updated_at is null, use created_at
+		if createdAt.Valid {
+			r.CreatedAt = createdAt.Time
+		} else {
+			r.CreatedAt = time.Time{}
+		}
 		if updatedAt.Valid {
 			r.UpdatedAt = updatedAt.Time
 		} else {
-			r.UpdatedAt = r.CreatedAt
+			r.UpdatedAt = time.Time{}
 		}
-
 		rooms = append(rooms, r)
 	}
 
-	totalPage := (totalData + req.PageSize - 1) / req.PageSize
+	totalPage := (totalData + pageSize - 1) / pageSize
 	return c.JSON(http.StatusOK, echo.Map{
 		"message":   "success",
 		"data":      rooms,
-		"page":      req.Page,
-		"pageSize":  req.PageSize,
+		"page":      page,
+		"pageSize":  pageSize,
 		"totalPage": totalPage,
 		"totalData": totalData,
 	})
@@ -1189,36 +1285,32 @@ func GetRoomByID(c echo.Context) error {
 	}
 
 	query := `
-        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, 
-               COALESCE(updated_at, created_at) as updated_at
+        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
         FROM rooms WHERE id = $1
     `
 	var r Room
+	var createdAt sql.NullTime
 	var updatedAt sql.NullTime
-
 	err = db.QueryRow(query, id).Scan(
-		&r.ID,
-		&r.Name,
-		&r.RoomType,
-		&r.Capacity,
-		&r.PricePerHour,
-		&r.PictureURL,
-		&r.CreatedAt,
-		&updatedAt,
+		&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour,
+		&r.PictureURL, &createdAt, &updatedAt,
 	)
+	if createdAt.Valid {
+		r.CreatedAt = createdAt.Time
+	} else {
+		r.CreatedAt = time.Time{}
+	}
+	if updatedAt.Valid {
+		r.UpdatedAt = updatedAt.Time
+	} else {
+		r.UpdatedAt = time.Time{}
+	}
 
 	if err == sql.ErrNoRows {
 		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
 	} else if err != nil {
 		log.Println("GetRoomByID DB error:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-	}
-
-	// If updated_at is null, use created_at
-	if updatedAt.Valid {
-		r.UpdatedAt = updatedAt.Time
-	} else {
-		r.UpdatedAt = r.CreatedAt
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{
@@ -1346,74 +1438,500 @@ func GetSnacks(c echo.Context) error {
 }
 
 // (GET /reservation/calculation)
-// GetReservationCalculation godoc
-// @Summary Get reservation calculation
-// @Description Get reservation calculation
+// CalculateReservation godoc
+// @Summary Calculate reservation
+// @Description Calculate reservation
 // @Tags Reservation
 // @Produce json
+// @Param room_id query string true "Room ID"
+// @Param snack_id query string true "Snack ID"
+// @Param startTime query string true "Start Time"
+// @Param endTime query string true "End Time"
+// @Param participant query string true "Participant"
+// @Param user_id query string true "User ID"
+// @Param name query string true "Name"
+// @Param phoneNumber query string true "Phone Number"
+// @Param company query string true "Company"
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /reservation/calculation [get]
-// func CalculateReservation(c echo.Context) error {
-// 	//ambil query data dari parameter request URL
-// 	roomID := c.QueryParam("room_id")
-// 	snackID := c.QueryParam("snack_id")
-// 	startTime := c.QueryParam("startTime")
-// 	endTime := c.QueryParam("endTime")
-// 	participant := c.QueryParam("participant")
-// 	userID := c.QueryParam("user_id")
-// 	name := c.QueryParam("name")
-// 	phoneNumber := c.QueryParam("phoneNumber")
-// 	company := c.QueryParam("company")
+func CalculateReservation(c echo.Context) error {
+	roomID, _ := strconv.Atoi(c.QueryParam("room_id"))
+	snackID, _ := strconv.Atoi(c.QueryParam("snack_id"))
+	startTimeStr := c.QueryParam("startTime")
+	endTimeStr := c.QueryParam("endTime")
+	participant, _ := strconv.Atoi(c.QueryParam("participant"))
+	//userID := c.QueryParam("user_id")
+	name := c.QueryParam("name")
+	phoneNumber := c.QueryParam("phoneNumber")
+	company := c.QueryParam("company")
 
-// 	//validasi parameter wajib
-// 	if roomID == "" || startTime == "" || endTime == "" {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "missing required parameters"})
-// 	}
+	//cek userID sama dengan user_id pada middleware
 
-// 	//unauthorized
-// 	if userID == "" || name == "" || phoneNumber == "" || company == "" {
-// 		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "unauthorized"})
-// 	}
+	// Validasi awal ---
+	if roomID == 0 || startTimeStr == "" || endTimeStr == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "missing required parameters"})
+	}
 
-// 	// --- Konversi angka dan waktu ---
-// 	roomIDInt, err := strconv.Atoi(roomID)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room_id"})
-// 	}
+	startTime, err := time.Parse(time.RFC3339, startTimeStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "invalid startTime format (must be RFC3339)"})
+	}
+	endTime, err := time.Parse(time.RFC3339, endTimeStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "invalid endTime format (must be RFC3339)"})
+	}
 
-// 	snackIDInt := 0
-// 	if snackID != "" {
-// 		snackIDInt, err = strconv.Atoi(snackID)
-// 		if err != nil {
-// 			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid snack_id"})
-// 		}
-// 	}
+	// Ambil data room
+	var room Room
+	err = db.QueryRow(`
+		SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
+		FROM rooms WHERE id = $1
+	`, roomID).Scan(&room.ID, &room.Name, &room.RoomType, &room.Capacity, &room.PricePerHour, &room.PictureURL, &room.CreatedAt, &room.UpdatedAt)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "room not found"})
+	}
 
-// 	participantInt, err := strconv.Atoi(participant)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid participant"})
-// 	}
+	// Ambil data snack
+	var snack Snack
+	err = db.QueryRow(`
+		SELECT id, name, unit, price, category
+		FROM snacks WHERE id = $1
+	`, snackID).Scan(&snack.ID, &snack.Name, &snack.Unit, &snack.Price, &snack.Category)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "snack not found"})
+	}
 
-// 	start, err := time.Parse(time.RFC3339, startTime)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid startTime format (use RFC3339)"})
-// 	}
+	// Cek booking bentrok
+	var existing int
+	err = db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM reservation_details 
+		WHERE room_id = $1
+		AND (
+			(start_at, end_at) OVERLAPS ($2, $3)
+		)
+	`, roomID, startTime, endTime).Scan(&existing)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	}
+	if existing > 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "booking bentrok"})
+	}
 
-// 	end, err := time.Parse(time.RFC3339, endTime)
-// 	if err != nil {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid endTime format (use RFC3339)"})
-// 	}
+	// Hitung total
+	durationMinutes := int(endTime.Sub(startTime).Minutes())
+	durationHours := float64(durationMinutes) / 60.0
 
-// 	if !end.After(start) {
-// 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "endTime must be after startTime"})
-// 	}
+	subTotalRoom := room.PricePerHour * durationHours
+	subTotalSnack := snack.Price * float64(participant)
+	total := subTotalRoom + subTotalSnack
 
-// 	durationMinutes := int(end.Sub(start).Minutes())
+	// Siapkan response struct
+	roomDetail := RoomCalculationDetail{
+		Name:          room.Name,
+		PricePerHour:  room.PricePerHour,
+		ImageURL:      room.PictureURL,
+		Capacity:      room.Capacity,
+		Type:          room.RoomType,
+		SubTotalSnack: subTotalSnack,
+		SubTotalRoom:  subTotalRoom,
+		StartTime:     startTime,
+		EndTime:       endTime,
+		Duration:      durationMinutes,
+		Participant:   participant,
+		Snack: Snack{
+			ID:       snack.ID,
+			Name:     snack.Name,
+			Unit:     snack.Unit,
+			Price:    snack.Price,
+			Category: snack.Category,
+		},
+	}
 
-// 	// ambil
+	response := CalculateReservationResponse{
+		Message: "success",
+		Data: CalculateReservationData{
+			Rooms:         []RoomCalculationDetail{roomDetail},
+			PersonalData:  PersonalData{Name: name, PhoneNumber: phoneNumber, Company: company},
+			SubTotalRoom:  subTotalRoom,
+			SubTotalSnack: subTotalSnack,
+			Total:         total,
+		},
+	}
 
-// }
+	return c.JSON(http.StatusOK, response)
+}
+
+// (POST /reservation)
+// CreateReservation godoc
+// @Summary Create a new reservation
+// @Description Create a new reservation
+// @Tags Reservation
+// @Accept json
+// @Produce json
+// @Param request body ReservationRequestBody true "Reservation request body"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /reservation [post]
+func CreateReservation(c echo.Context) error {
+	var req ReservationRequestBody
+
+	// Bind JSON
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
+	}
+
+	// Validasi dasar
+	if req.UserID <= 0 || req.Name == "" || req.PhoneNumber == "" || req.Company == "" || len(req.Rooms) == 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
+	}
+
+	for _, room := range req.Rooms {
+		if room.StartTime.IsZero() || room.EndTime.IsZero() {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid start or end time"})
+		}
+	}
+
+	// Cek bentrok booking
+	for _, room := range req.Rooms {
+		var existing int
+		err := db.QueryRow(`
+			SELECT COUNT(*)
+			FROM reservation_details
+			WHERE room_id = $1
+			AND (start_at, end_at) OVERLAPS ($2, $3)
+		`, room.ID, room.StartTime, room.EndTime).Scan(&existing)
+		if err != nil {
+			log.Println("Error checking overlap:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+		if existing > 0 {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"message": fmt.Sprintf("Room %d has already been booked for that time range", room.ID),
+			})
+		}
+	}
+
+	// Mulai transaksi
+	tx, err := db.Begin()
+	if err != nil {
+		log.Println("Error starting transaction:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+
+	// Insert ke tabel reservations
+	var reservationID int
+	err = tx.QueryRow(`
+		INSERT INTO reservations (
+			user_id, contact_name, contact_phone, contact_company,
+			note, status_reservation, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, 'booked', NOW(), NOW())
+		RETURNING id
+	`, req.UserID, req.Name, req.PhoneNumber, req.Company, req.Notes).Scan(&reservationID)
+	if err != nil {
+		log.Println("Error inserting reservation:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	}
+
+	// Variabel untuk subtotal
+	var subtotalSnack float64
+	var subtotalRoom float64
+
+	// Loop tiap room
+	for _, room := range req.Rooms {
+		var roomTable Room
+		err = tx.QueryRow(`
+			SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
+			FROM rooms WHERE id = $1
+		`, room.ID).Scan(
+			&roomTable.ID,
+			&roomTable.Name,
+			&roomTable.RoomType,
+			&roomTable.Capacity,
+			&roomTable.PricePerHour,
+			&roomTable.PictureURL,
+			&roomTable.CreatedAt,
+			&roomTable.UpdatedAt,
+		)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+
+		var snackTable Snack
+		err = tx.QueryRow(`
+			SELECT id, name, unit, price, category
+			FROM snacks WHERE id = $1
+		`, room.SnackID).Scan(
+			&snackTable.ID,
+			&snackTable.Name,
+			&snackTable.Unit,
+			&snackTable.Price,
+			&snackTable.Category,
+		)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+
+		// Hitung durasi dan total harga
+		durationMinute := int(room.EndTime.Sub(room.StartTime).Minutes())
+		totalRoom := (float64(durationMinute) / 60.0) * roomTable.PricePerHour
+		totalSnack := float64(room.Participant) * snackTable.Price
+
+		// Tambahkan ke subtotal
+		subtotalRoom += totalRoom
+		subtotalSnack += totalSnack
+
+		// Insert ke reservation_details
+		_, err = tx.Exec(`
+			INSERT INTO reservation_details (
+				reservation_id,
+				room_id, room_name, room_price,
+				snack_id, snack_name, snack_price,
+				duration_minute, total_participants,
+				total_room, total_snack,
+				start_at, end_at,
+				created_at, updated_at
+			)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())
+		`,
+			reservationID,
+			room.ID, roomTable.Name, roomTable.PricePerHour,
+			room.SnackID, snackTable.Name, snackTable.Price,
+			durationMinute, room.Participant,
+			totalRoom, totalSnack,
+			room.StartTime, room.EndTime,
+		)
+		if err != nil {
+			log.Println("Error inserting reservation detail:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+
+		// Update subtotal dan total di tabel reservations
+		total := subtotalRoom + subtotalSnack
+		_, err = tx.Exec(`
+			UPDATE reservations
+			SET subtotal_room = $1,
+				subtotal_snack = $2,
+				duration_minute = $3,
+				total = $4,
+				total_participants = $5,
+				add_snack = $6,
+				updated_at = NOW()
+			WHERE id = $7
+		`, subtotalRoom, subtotalSnack, durationMinute, total, room.Participant, room.AddSnack, reservationID)
+		if err != nil {
+			log.Println("Error updating reservation totals:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "reservation created successfully",
+	})
+}
+
+// GetReservationHistory godoc
+// @Summary Get meeting reservation history
+// @Description Retrieve meeting reservation history filtered by user_id, room_id, or date.
+// @Tags Reservation
+// @Param user_id query string false "User ID"
+// @Param room_id query string false "Room ID"
+// @Param date query string false "Date (YYYY-MM-DD)"
+// @Produce json
+// @Success 200 {object} map[string]interface{} "History retrieved successfully"
+// @Failure 400 {object} map[string]interface{} "Invalid query parameter"
+// @Failure 500 {object} map[string]interface{} "Failed to retrieve history"
+// @Router /history [get]
+func GetReservationHistory(c echo.Context) error {
+	startDate := c.QueryParam("startDate")
+	endDate := c.QueryParam("endDate")
+	roomType := c.QueryParam("type")
+	status := c.QueryParam("status")
+
+	// Validasi room type
+	validTypes := map[string]bool{
+		"small": true, "medium": true, "large": true,
+	}
+	if !validTypes[strings.ToLower(roomType)] {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "room type is not valid"})
+	}
+
+	// Pagination parameter
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page <= 0 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	offset := (page - 1) * pageSize
+
+	// query filter
+	query := `
+	SELECT 
+		r.id, r.contact_name, r.contact_phone, r.contact_company,
+		COALESCE(SUM(rd.snack_price),0) AS sub_total_snack,
+		COALESCE(SUM(rd.room_price),0) AS sub_total_room,
+		COALESCE(SUM(rd.snack_price + rd.room_price),0) AS total,
+		r.status_reservation, r.created_at, r.updated_at
+	FROM reservations r
+	JOIN reservation_details rd ON rd.reservation_id = r.id
+	JOIN rooms rm ON rm.id = rd.room_id
+	WHERE 1=1
+	`
+
+	args := []interface{}{}
+	argIdx := 1
+
+	if startDate != "" {
+		query += fmt.Sprintf(" AND r.created_at >= $%d", argIdx)
+		args = append(args, startDate)
+		argIdx++
+	}
+	if endDate != "" {
+		query += fmt.Sprintf(" AND r.created_at <= $%d", argIdx)
+		args = append(args, endDate)
+		argIdx++
+	}
+	if roomType != "" {
+		query += fmt.Sprintf(" AND rm.room_type = $%d", argIdx)
+		args = append(args, roomType)
+		argIdx++
+	}
+	if status != "" {
+		query += fmt.Sprintf(" AND r.status_reservation = $%d", argIdx)
+		args = append(args, status)
+		argIdx++
+	}
+
+	query += `
+	GROUP BY r.id, r.contact_name, r.contact_phone, r.contact_company, r.status_reservation, r.created_at, r.updated_at
+	ORDER BY r.created_at DESC
+	LIMIT $%d OFFSET $%d
+	`
+	query = fmt.Sprintf(query, argIdx, argIdx+1)
+	args = append(args, pageSize, offset)
+
+	// Jalankan query utama
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		log.Println("Error fetching reservation history:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	}
+	defer rows.Close()
+
+	var histories []ReservationHistoryData
+	for rows.Next() {
+		var h ReservationHistoryData
+		err := rows.Scan(
+			&h.ID, &h.Name, &h.PhoneNumber, &h.Company,
+			&h.SubTotalSnack, &h.SubTotalRoom, &h.Total,
+			&h.Status, &h.CreatedAt, &h.UpdatedAt,
+		)
+		if err != nil {
+			log.Println("Error scanning reservation:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+
+		// Ambil data room per reservation
+		roomRows, err := db.Query(`
+			SELECT rm.id, rm.price_per_hour, rm.name, rm.room_type,
+				COALESCE(rd.room_price,0), COALESCE(rd.snack_price,0)
+			FROM reservation_details rd
+			JOIN rooms rm ON rm.id = rd.room_id
+			WHERE rd.reservation_id = $1
+		`, h.ID)
+		if err != nil {
+			log.Println("Error fetching rooms:", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		}
+
+		for roomRows.Next() {
+			var r ReservationHistoryRoomDetail
+			err := roomRows.Scan(
+				&r.ID, &r.Price, &r.Name, &r.Type,
+				&r.TotalRoom, &r.TotalSnack,
+			)
+			if err != nil {
+				log.Println("Error scanning room detail:", err)
+				return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+			}
+			h.Rooms = append(h.Rooms, r)
+		}
+		roomRows.Close()
+
+		histories = append(histories, h)
+	}
+
+	// --- Hitung total data ---
+	var totalData int
+	countQuery := `
+		SELECT COUNT(DISTINCT r.id)
+		FROM reservations r
+		JOIN reservation_details rd ON rd.reservation_id = r.id
+		JOIN rooms rm ON rm.id = rd.room_id
+		WHERE 1=1
+	`
+	countArgs := []interface{}{}
+	argCount := 1
+
+	if startDate != "" {
+		countQuery += fmt.Sprintf(" AND r.created_at >= $%d", argCount)
+		countArgs = append(countArgs, startDate)
+		argCount++
+	}
+	if endDate != "" {
+		countQuery += fmt.Sprintf(" AND r.created_at <= $%d", argCount)
+		countArgs = append(countArgs, endDate)
+		argCount++
+	}
+	if roomType != "" {
+		countQuery += fmt.Sprintf(" AND rm.room_type = $%d", argCount)
+		countArgs = append(countArgs, roomType)
+		argCount++
+	}
+	if status != "" {
+		countQuery += fmt.Sprintf(" AND r.status_reservation = $%d", argCount)
+		countArgs = append(countArgs, status)
+		argCount++
+	}
+
+	err = db.QueryRow(countQuery, countArgs...).Scan(&totalData)
+	if err != nil {
+		log.Println("Error counting data:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+	}
+
+	totalPage := int(math.Ceil(float64(totalData) / float64(pageSize)))
+
+	// --- Jika tidak ada data ---
+	if len(histories) == 0 {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "url not found"})
+	}
+
+	// --- Response sukses ---
+	return c.JSON(http.StatusOK, ReservationHistoryResponse{
+		Message:   "Reservation history fetched successfully",
+		Data:      histories,
+		Page:      page,
+		PageSize:  pageSize,
+		TotalPage: totalPage,
+		TotalData: totalData,
+	})
+}
 
 // GetReservationByID godoc
 // @Summary Detail reservation by ID
@@ -1492,7 +2010,7 @@ func GetReservationByID(c echo.Context) error {
 	rooms := make([]RoomInfo, 0)
 	for rows.Next() {
 		var room RoomInfo
-		var snack SnackInfo
+		var snack Snack
 		var startAt, endAt sql.NullTime
 
 		err := rows.Scan(
@@ -1542,40 +2060,33 @@ func GetReservationByID(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
-// Add this response types
-type ReservationByIDData struct {
-	Rooms         []RoomInfo   `json:"rooms"`
-	PersonalData  PersonalData `json:"personalData"`
-	SubTotalSnack float64      `json:"subTotalSnack"`
-	SubTotalRoom  float64      `json:"subTotalRoom"`
-	Total         float64      `json:"total"`
-	Status        string       `json:"status"`
-}
-
-type ReservationByIDResponse struct {
-	Message string              `json:"message"`
-	Data    ReservationByIDData `json:"data"`
-}
-
 // UpdateReservationStatus godoc
 // @Summary Update reservation status
 // @Description Update status of a reservation (booked/canceled/paid)
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param request body UpdateReservationStatusRequest true "Status update request"
+// @Param request body UpdateReservationRequest true "Status update request"
 // @Success 200 {object} map[string]string "message: update status success"
 // @Failure 400 {object} map[string]string "message: bad request/reservation already canceled/paid"
 // @Failure 401 {object} map[string]string "message: unauthorized"
 // @Failure 404 {object} map[string]string "message: url not found"
 // @Failure 500 {object} map[string]string "message: internal server error"
-// @Router /reservation/status [post]
+// @Router /reservation/status [patch]
 func UpdateReservationStatus(c echo.Context) error {
 	var req UpdateReservationRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, SimpleMessageResponse{Message: "invalid request format"})
 	}
 	req.Status = strings.TrimSpace(req.Status)
+	// allow passing reservation id via query param for convenience
+	if req.ReservationID == 0 {
+		if q := c.QueryParam("reservation_id"); q != "" {
+			if id, err := strconv.Atoi(q); err == nil {
+				req.ReservationID = id
+			}
+		}
+	}
 	if req.Status == "" {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "bad request"})
 	}
@@ -1935,6 +2446,7 @@ func GetDashboard(c echo.Context) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+// Add this handler function
 // GetRoomReservationSchedule godoc
 // @Summary Get room reservation schedule
 // @Description Get all reservations for a specific room
@@ -1956,18 +2468,36 @@ func GetRoomReservationSchedule(c echo.Context) error {
 		})
 	}
 
-	// Get date filter from query parameter
+	// Support both date and datetime range filters
+	// Prefer start_datetime & end_datetime (RFC3339). If not provided, fall back to date=YYYY-MM-DD
+	startDTStr := c.QueryParam("start_datetime")
+	endDTStr := c.QueryParam("end_datetime")
 	dateStr := c.QueryParam("date")
-	var dateFilter time.Time
-	if dateStr != "" {
-		dateFilter, err = time.Parse("2006-01-02", dateStr)
+
+	var useRange bool
+	var startDT, endDT time.Time
+	if startDTStr != "" && endDTStr != "" {
+		startDT, err = time.Parse(time.RFC3339, startDTStr)
 		if err != nil {
-			return c.JSON(http.StatusBadRequest, echo.Map{
-				"message": "invalid date format, use YYYY-MM-DD",
-			})
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid start_datetime (must be RFC3339)"})
 		}
-	} else {
-		dateFilter = time.Now()
+		endDT, err = time.Parse(time.RFC3339, endDTStr)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid end_datetime (must be RFC3339)"})
+		}
+		useRange = true
+	}
+
+	var dateFilter time.Time
+	if !useRange {
+		if dateStr != "" {
+			dateFilter, err = time.Parse("2006-01-02", dateStr)
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid date format, use YYYY-MM-DD"})
+			}
+		} else {
+			dateFilter = time.Now()
+		}
 	}
 
 	// Check if room exists
@@ -1986,21 +2516,38 @@ func GetRoomReservationSchedule(c echo.Context) error {
 	}
 
 	// Query reservations for the room
-	query := `
-        SELECT 
-            rd.id,
-            rd.start_at,
-            rd.end_at,
-            r.status_reservation,
-            rd.total_participants
-        FROM reservation_details rd
-        JOIN reservations r ON rd.reservation_id = r.id
-        WHERE rd.room_id = $1
-        AND DATE(rd.start_at) = DATE($2)
-        ORDER BY rd.start_at ASC
-    `
-
-	rows, err := db.Query(query, roomID, dateFilter)
+	var rows *sql.Rows
+	if useRange {
+		query := `
+			SELECT
+				rd.id,
+				rd.start_at,
+				rd.end_at,
+				r.status_reservation,
+				rd.total_participants
+			FROM reservation_details rd
+			JOIN reservations r ON rd.reservation_id = r.id
+			WHERE rd.room_id = $1
+			AND (rd.start_at, rd.end_at) OVERLAPS ($2, $3)
+			ORDER BY rd.start_at ASC
+		`
+		rows, err = db.Query(query, roomID, startDT, endDT)
+	} else {
+		query := `
+			SELECT 
+				rd.id,
+				rd.start_at,
+				rd.end_at,
+				r.status_reservation,
+				rd.total_participants
+			FROM reservation_details rd
+			JOIN reservations r ON rd.reservation_id = r.id
+			WHERE rd.room_id = $1
+			AND DATE(rd.start_at) = DATE($2)
+			ORDER BY rd.start_at ASC
+		`
+		rows, err = db.Query(query, roomID, dateFilter)
+	}
 	if err != nil {
 		log.Println("Query error:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{
@@ -2012,44 +2559,58 @@ func GetRoomReservationSchedule(c echo.Context) error {
 	schedules := []RoomSchedule{}
 	for rows.Next() {
 		var schedule RoomSchedule
+		var startAt sql.NullTime
+		var endAt sql.NullTime
+		var status sql.NullString
+		var participants sql.NullInt64
+
 		err := rows.Scan(
 			&schedule.ID,
-			&schedule.StartTime,
-			&schedule.EndTime,
-			&schedule.Status,
-			&schedule.TotalParticipant,
+			&startAt,
+			&endAt,
+			&status,
+			&participants,
 		)
 		if err != nil {
 			log.Println("Row scan error:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{
-				"message": "internal server error",
-			})
+			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+		}
+		if startAt.Valid {
+			schedule.StartTime = startAt.Time
+		}
+		if endAt.Valid {
+			schedule.EndTime = endAt.Time
+		}
+		if status.Valid {
+			schedule.Status = status.String
+		}
+		if participants.Valid {
+			schedule.TotalParticipant = int(participants.Int64)
 		}
 		schedules = append(schedules, schedule)
 	}
 
 	// Get room details
 	var room Room
-	var updatedAt sql.NullTime // <-- tambahkan deklarasi ini
-
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
 	err = db.QueryRow(`
-        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at 
-        FROM rooms 
-        WHERE id = $1
-    `, roomID).Scan(
+		SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at 
+		FROM rooms 
+		WHERE id = $1
+	`, roomID).Scan(
 		&room.ID, &room.Name, &room.RoomType, &room.Capacity,
-		&room.PricePerHour, &room.PictureURL, &room.CreatedAt, &updatedAt,
+		&room.PricePerHour, &room.PictureURL, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		log.Println("Room details query error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{
-			"message": "internal server error",
-		})
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+	}
+	if createdAt.Valid {
+		room.CreatedAt = createdAt.Time
 	}
 	if updatedAt.Valid {
 		room.UpdatedAt = updatedAt.Time
-	} else {
-		room.UpdatedAt = room.CreatedAt
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{
