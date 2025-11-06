@@ -388,8 +388,11 @@ func main() {
 	authGroup.POST("reservation", CreateReservation)
 	authGroup.GET("reservation/history", GetReservationHistory)
 	authGroup.PATCH("reservation/status", UpdateReservationStatus)
+<<<<<<< HEAD
 	// also allow updating status via path parameter for convenience: PATCH /reservation/:id/status
 	authGroup.PATCH("reservation/:id/status", UpdateReservationStatus)
+=======
+>>>>>>> 1ddf0823dce644aaefddef8eabf16b5d09b4824b
 	authGroup.GET("reservations/schedules", GetReservationSchedules)
 	authGroup.GET("reservation/:id", GetReservationByID)
 
@@ -2088,6 +2091,7 @@ func UpdateReservationStatus(c echo.Context) error {
 				req.ReservationID = id
 			}
 		}
+<<<<<<< HEAD
 		// also accept reservation id from path param /reservation/:id/status
 		if req.ReservationID == 0 {
 			if p := c.Param("id"); p != "" {
@@ -2132,6 +2136,8 @@ func UpdateReservationStatus(c echo.Context) error {
 				}
 			}
 		}
+=======
+>>>>>>> 1ddf0823dce644aaefddef8eabf16b5d09b4824b
 	}
 	if req.Status == "" {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "bad request"})
