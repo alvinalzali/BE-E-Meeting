@@ -388,6 +388,11 @@ func main() {
 	authGroup.POST("reservation", CreateReservation)
 	authGroup.GET("reservation/history", GetReservationHistory)
 	authGroup.PATCH("reservation/status", UpdateReservationStatus)
+<<<<<<< HEAD
+	// also allow updating status via path parameter for convenience: PATCH /reservation/:id/status
+	authGroup.PATCH("reservation/:id/status", UpdateReservationStatus)
+=======
+>>>>>>> 1ddf0823dce644aaefddef8eabf16b5d09b4824b
 	authGroup.GET("reservations/schedules", GetReservationSchedules)
 	authGroup.GET("reservation/:id", GetReservationByID)
 
@@ -2086,6 +2091,53 @@ func UpdateReservationStatus(c echo.Context) error {
 				req.ReservationID = id
 			}
 		}
+<<<<<<< HEAD
+		// also accept reservation id from path param /reservation/:id/status
+		if req.ReservationID == 0 {
+			if p := c.Param("id"); p != "" {
+				if id, err := strconv.Atoi(p); err == nil {
+					req.ReservationID = id
+				}
+			}
+		}
+	}
+	// If still missing reservation id, try to infer from JWT token in Authorization header.
+	// We parse the token locally here (handler-only) to avoid modifying team-owned middleware.
+	if req.ReservationID == 0 {
+		authHeader := c.Request().Header.Get("Authorization")
+		if authHeader != "" {
+			tokenStr := strings.TrimSpace(authHeader)
+			if strings.HasPrefix(strings.ToLower(tokenStr), "bearer ") {
+				tokenStr = strings.TrimSpace(tokenStr[7:])
+			}
+
+			// parse token with same secret used by generateAccessToken
+			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+				return []byte(os.Getenv("secret_key")), nil
+			})
+			if err != nil {
+				// token present but invalid
+				return c.JSON(http.StatusUnauthorized, echo.Map{"message": "invalid token"})
+			}
+			if token != nil && token.Valid {
+				if claims, ok := token.Claims.(*Claims); ok {
+					username := claims.Username
+					if username != "" {
+						// get user id from username
+						var userID int
+						if err := db.QueryRow(`SELECT id FROM users WHERE username=$1`, username).Scan(&userID); err == nil {
+							// get latest reservation for this user
+							var latestID int
+							if err := db.QueryRow(`SELECT id FROM reservations WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, userID).Scan(&latestID); err == nil {
+								req.ReservationID = latestID
+							}
+						}
+					}
+				}
+			}
+		}
+=======
+>>>>>>> 1ddf0823dce644aaefddef8eabf16b5d09b4824b
 	}
 	if req.Status == "" {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "bad request"})
