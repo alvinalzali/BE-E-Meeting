@@ -361,8 +361,6 @@ func main() {
 	//assets
 	e.Static("/assets", "./assets")
 
-	// debug endpoints removed - keep routes minimal and secured in production
-
 	// route for login, register, password reset
 	e.POST("/login", login)
 	e.POST("/register", RegisterUser)
@@ -388,13 +386,8 @@ func main() {
 	authGroup.POST("reservation", CreateReservation)
 	authGroup.GET("reservation/history", GetReservationHistory)
 	authGroup.PATCH("reservation/status", UpdateReservationStatus)
-<<<<<<< HEAD
-	// also allow updating status via path parameter for convenience: PATCH /reservation/:id/status
-	authGroup.PATCH("reservation/:id/status", UpdateReservationStatus)
-=======
->>>>>>> 1ddf0823dce644aaefddef8eabf16b5d09b4824b
-	authGroup.GET("reservations/schedules", GetReservationSchedules)
 	authGroup.GET("reservation/:id", GetReservationByID)
+	authGroup.GET("reservations/schedules", GetReservationSchedules)
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
 	authGroup.GET("dashboard", GetDashboard)
@@ -1951,8 +1944,6 @@ func GetReservationHistory(c echo.Context) error {
 // @Failure 500 {object} map[string]string
 // @Router /reservation/{id} [get]
 func GetReservationByID(c echo.Context) error {
-	// auth check removed so endpoint is public
-
 	idParam := c.Param("id")
 	if idParam == "" {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid reservation id"})
@@ -1967,47 +1958,45 @@ func GetReservationByID(c echo.Context) error {
 	var status sql.NullString
 
 	err = db.QueryRow(`
-        SELECT contact_name, contact_phone, contact_company, 
-               COALESCE(subtotal_snack, 0) as subtotal_snack, 
-               COALESCE(subtotal_room, 0) as subtotal_room, 
-               COALESCE(total, 0) as total,
-               COALESCE(status_reservation::text, '') as status_reservation
-        FROM reservations
-        WHERE id = $1
-    `, id).Scan(&contactName, &contactPhone, &contactCompany, &subtotalSnack, &subtotalRoom, &total, &status)
+		SELECT contact_name, contact_phone, contact_company, 
+			COALESCE(subtotal_room, 0) as subtotal_room, 
+			COALESCE(subtotal_snack, 0) as subtotal_snack, 
+			COALESCE(total, 0) as total,
+			COALESCE(status_reservation::text, '') as status_reservation
+		FROM reservations
+		WHERE id = $1
+	`, id).Scan(&contactName, &contactPhone, &contactCompany, &subtotalRoom, &subtotalSnack, &total, &status)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return c.JSON(http.StatusNotFound, echo.Map{"message": "url not found"})
 		}
-		log.Println("GetReservationByID master query:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
 	rows, err := db.Query(`
-        SELECT 
-            COALESCE(r.name, '') as room_name,
-            COALESCE(r.price_per_hour, 0) as price_per_hour,
-            COALESCE(r.picture_url, '') as image_url,
-            COALESCE(r.capacity, 0) as capacity,
-            COALESCE(r.room_type::text, 'small') as room_type,
-            COALESCE(rd.total_snack, 0) as total_snack,
-            COALESCE(rd.total_room, 0) as total_room,
-            rd.start_at,
-            rd.end_at,
-            COALESCE(rd.duration_minute, 0) as duration,
-            COALESCE(rd.total_participants, 0) as participant,
-            s.id as snack_id,
+		SELECT 
+			COALESCE(r.name, '') as room_name,
+			COALESCE(r.price_per_hour, 0) as price_per_hour,
+			COALESCE(r.picture_url, '') as image_url,
+			COALESCE(r.capacity, 0) as capacity,
+			COALESCE(r.room_type::text, 'small') as room_type,
+			COALESCE(rd.total_snack, 0) as total_snack,
+			COALESCE(rd.total_room, 0) as total_room,
+			rd.start_at,
+			rd.end_at,
+			COALESCE(rd.duration_minute, 0) as duration,
+			COALESCE(rd.total_participants, 0) as participant,
+			s.id as snack_id,
 			COALESCE(s.name, '') as snack_name,
-            COALESCE(s.unit::text, '') as snack_unit,
-            COALESCE(s.price, 0) as snack_price,
-            COALESCE(s.category::text, '') as snack_category
-        FROM reservation_details rd
-        LEFT JOIN rooms r ON rd.room_id = r.id
-        LEFT JOIN snacks s ON rd.snack_id = s.id
-        WHERE rd.reservation_id = $1
-    `, id)
+			COALESCE(s.unit::text, '') as snack_unit,
+			COALESCE(s.price, 0) as snack_price,
+			COALESCE(s.category::text, '') as snack_category
+		FROM reservation_details rd
+		LEFT JOIN rooms r ON rd.room_id = r.id
+		LEFT JOIN snacks s ON rd.snack_id = s.id
+		WHERE rd.reservation_id = $1
+	`, id)
 	if err != nil {
-		log.Println("GetReservationByID details query:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 	defer rows.Close()
@@ -2017,34 +2006,45 @@ func GetReservationByID(c echo.Context) error {
 		var room RoomInfo
 		var snack Snack
 		var startAt, endAt sql.NullTime
-
 		err := rows.Scan(
 			&room.Name, &room.PricePerHour, &room.ImageURL, &room.Capacity, &room.Type,
 			&room.TotalSnack, &room.TotalRoom, &startAt, &endAt, &room.Duration, &room.Participant,
 			&snack.ID, &snack.Name, &snack.Unit, &snack.Price, &snack.Category,
 		)
 		if err != nil {
-			log.Println("Scan error:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
+			continue // skip this row, try next
 		}
-
 		if startAt.Valid {
 			room.StartTime = startAt.Time.Format(time.RFC3339)
 		}
 		if endAt.Valid {
 			room.EndTime = endAt.Time.Format(time.RFC3339)
 		}
-
 		if snack.ID > 0 {
 			room.Snack = &snack
 		}
-
 		rooms = append(rooms, room)
 	}
 
-	log.Println("GetReservationByID rooms returned:", len(rooms))
+	if len(rooms) == 0 {
+		return c.JSON(http.StatusOK, ReservationByIDResponse{
+			Message: "success",
+			Data: ReservationByIDData{
+				Rooms: rooms,
+				PersonalData: PersonalData{
+					Name:        contactName.String,
+					PhoneNumber: contactPhone.String,
+					Company:     contactCompany.String,
+				},
+				SubTotalSnack: subtotalSnack.Float64,
+				SubTotalRoom:  subtotalRoom.Float64,
+				Total:         total.Float64,
+				Status:        status.String,
+			},
+		})
+	}
 
-	response := ReservationByIDResponse{
+	return c.JSON(http.StatusOK, ReservationByIDResponse{
 		Message: "success",
 		Data: ReservationByIDData{
 			Rooms: rooms,
@@ -2058,11 +2058,7 @@ func GetReservationByID(c echo.Context) error {
 			Total:         total.Float64,
 			Status:        status.String,
 		},
-	}
-
-	response.Data.Status = status.String
-
-	return c.JSON(http.StatusOK, response)
+	})
 }
 
 // UpdateReservationStatus godoc
@@ -2091,7 +2087,6 @@ func UpdateReservationStatus(c echo.Context) error {
 				req.ReservationID = id
 			}
 		}
-<<<<<<< HEAD
 		// also accept reservation id from path param /reservation/:id/status
 		if req.ReservationID == 0 {
 			if p := c.Param("id"); p != "" {
@@ -2136,8 +2131,6 @@ func UpdateReservationStatus(c echo.Context) error {
 				}
 			}
 		}
-=======
->>>>>>> 1ddf0823dce644aaefddef8eabf16b5d09b4824b
 	}
 	if req.Status == "" {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "bad request"})
