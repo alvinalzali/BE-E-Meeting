@@ -17,6 +17,9 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/joho/godotenv"
@@ -349,7 +352,20 @@ func main() {
 	dbPassword := os.Getenv("db_password")
 	dbName := os.Getenv("db_name")
 
-	db = connectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
+	db = ConnectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
+
+	//berikan inputan switch 1 untuk migrate up lalu kembali ke menu, 2 untuk migrate down, 3 untuk continue
+	fmt.Println("Enter 1 for migrate up, 2 for migrate down, 3 for continue:")
+	var input int
+	fmt.Scanln(&input)
+	switch input {
+	case 1:
+		migrateUp(db)
+	case 2:
+		migrateDown(db)
+	}
+
+	JwtSecret = []byte(os.Getenv("jwt_secret"))
 
 	e := echo.New()
 
@@ -404,7 +420,47 @@ func main() {
 
 }
 
-func connectDB(username, password, dbname, host string, port int) *sql.DB {
+func migrateUp(db *sql.DB) {
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://migrations",
+		"postgres", driver)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = m.Up()
+	if err != nil && err != migrate.ErrNoChange {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Migrate up successfully")
+}
+
+func migrateDown(db *sql.DB) {
+	//cek kalau database dirty
+
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://migrations",
+		"postgres", driver)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = m.Down()
+	if err != nil && err != migrate.ErrNoChange {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Migrate down successfully")
+}
+
+func ConnectDB(username, password, dbname, host string, port int) *sql.DB {
 	// connect to db
 	connSt := "host=" + host + " port=" + strconv.Itoa(port) + " user=" + username + " password=" + password + " dbname=" + dbname + " sslmode=disable"
 	db, err := sql.Open("postgres", connSt)
