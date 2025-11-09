@@ -13,9 +13,8 @@ import (
 	"strings"
 	"time"
 
-	_ "BE-E-MEETING/docs"
-
 	"BE-E-MEETING/app/entities"
+	_ "BE-E-MEETING/docs"
 
 	"github.com/go-playground/validator/v10"
 	jwt "github.com/golang-jwt/jwt/v5"
