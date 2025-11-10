@@ -42,7 +42,7 @@ services:
 
   db:
     image: postgres:15-alpine
-    container_name: skbe5_postgres_db
+    container_name: skbe5_postgres_db_kelompok_1
     environment:
       - POSTGRES_USER=e_meeting
       - POSTGRES_DB=e_meeting
