@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: skbe5-e-meeting-migrate
+    container_name: skbe5-e-meeting-migrate_kelompok-1
     entrypoint:
       [
         "migrate",
