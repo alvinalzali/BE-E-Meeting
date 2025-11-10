@@ -1,36 +1,16 @@
 definitions:
-  main.DashboardResponse:
+  entities.Login:
     properties:
-      data:
-        properties:
-          rooms:
-            items:
-              $ref: '#/definitions/main.DashboardRoom'
-            type: array
-          totalOmzet:
-            type: number
-          totalReservation:
-            type: integer
-          totalRoom:
-            type: integer
-          totalVisitor:
-            type: integer
-        type: object
-      message:
+      password:
         type: string
-    type: object
-  main.DashboardRoom:
-    properties:
-      id:
-        type: integer
-      name:
+      username:
+        description: login using username or email
         type: string
-      omzet:
-        type: number
-      percentageOfUsage:
-        type: number
+    required:
+    - password
+    - username
     type: object
-  main.PasswordConfirmReset:
+  entities.PasswordConfirmReset:
     properties:
       confirm_password:
         type: string
@@ -40,40 +20,7 @@ definitions:
     - confirm_password
     - new_password
     type: object
-  main.PersonalData:
-    properties:
-      company:
-        type: string
-      name:
-        type: string
-      phoneNumber:
-        type: string
-    type: object
-  main.ReservationByIDData:
-    properties:
-      personalData:
-        $ref: '#/definitions/main.PersonalData'
-      rooms:
-        items:
-          $ref: '#/definitions/main.RoomInfo'
-        type: array
-      status:
-        type: string
-      subTotalRoom:
-        type: number
-      subTotalSnack:
-        type: number
-      total:
-        type: number
-    type: object
-  main.ReservationByIDResponse:
-    properties:
-      data:
-        $ref: '#/definitions/main.ReservationByIDData'
-      message:
-        type: string
-    type: object
-  main.ReservationRequestBody:
+  entities.ReservationRequestBody:
     properties:
       addSnack:
         description: apakah reservasi ini melibatkan snack
@@ -88,7 +35,7 @@ definitions:
         type: string
       rooms:
         items:
-          $ref: '#/definitions/main.RoomReservationRequest'
+          $ref: '#/definitions/entities.RoomReservationRequest'
         type: array
       totalParticipants:
         description: total keseluruhan peserta
@@ -96,41 +43,14 @@ definitions:
       userID:
         type: integer
     type: object
-  main.ResetRequest:
+  entities.ResetRequest:
     properties:
       email:
         type: string
     required:
     - email
     type: object
-  main.RoomInfo:
-    properties:
-      capacity:
-        type: integer
-      duration:
-        type: integer
-      endTime:
-        type: string
-      imageURL:
-        type: string
-      name:
-        type: string
-      participant:
-        type: integer
-      pricePerHour:
-        type: number
-      snack:
-        $ref: '#/definitions/main.Snack'
-      startTime:
-        type: string
-      totalRoom:
-        type: number
-      totalSnack:
-        type: number
-      type:
-        type: string
-    type: object
-  main.RoomRequest:
+  entities.RoomRequest:
     properties:
       capacity:
         type: integer
@@ -143,7 +63,7 @@ definitions:
       type:
         type: string
     type: object
-  main.RoomReservationRequest:
+  entities.RoomReservationRequest:
     properties:
       addSnack:
         description: kalau ruangan ini pakai snack atau tidak
@@ -161,59 +81,7 @@ definitions:
       startTime:
         type: string
     type: object
-  main.RoomScheduleInfo:
-    properties:
-      companyName:
-        type: string
-      id:
-        type: string
-      roomName:
-        type: string
-      schedules:
-        items:
-          $ref: '#/definitions/main.Schedule'
-        type: array
-    type: object
-  main.Schedule:
-    properties:
-      endTime:
-        type: string
-      startTime:
-        type: string
-      status:
-        type: string
-    type: object
-  main.ScheduleResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/main.RoomScheduleInfo'
-        type: array
-      message:
-        type: string
-      page:
-        type: integer
-      pageSize:
-        type: integer
-      totalData:
-        type: integer
-      totalPage:
-        type: integer
-    type: object
-  main.Snack:
-    properties:
-      category:
-        type: string
-      id:
-        type: integer
-      name:
-        type: string
-      price:
-        type: number
-      unit:
-        type: string
-    type: object
-  main.UpdateReservationRequest:
+  entities.UpdateReservationRequest:
     properties:
       reservation_id:
         type: integer
@@ -227,24 +95,7 @@ definitions:
     - reservation_id
     - status
     type: object
-  main.User:
-    properties:
-      email:
-        type: string
-      name:
-        type: string
-      password:
-        description: password harus ada angka, huruf besar, huruf kecil, dan simbol
-        type: string
-      username:
-        type: string
-    required:
-    - email
-    - name
-    - password
-    - username
-    type: object
-  main.updateUser:
+  entities.UpdateUser:
     properties:
       email:
         type: string
@@ -271,6 +122,23 @@ definitions:
         type: string
       username:
         type: string
+    type: object
+  entities.User:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        description: password harus ada angka, huruf besar, huruf kecil, dan simbol
+        type: string
+      username:
+        type: string
+    required:
+    - email
+    - name
+    - password
+    - username
     type: object
 info:
   contact: {}
@@ -301,7 +169,8 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.DashboardResponse'
+            additionalProperties: true
+            type: object
         "400":
           description: Bad Request
           schema:
@@ -366,21 +235,64 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - BearerAuth: []
       summary: Get meeting reservation history
       tags:
       - Reservation
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Login user
+      parameters:
+      - description: Login data
+        in: body
+        name: loginData
+        required: true
+        schema:
+          $ref: '#/definitions/entities.Login'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Login user
+      tags:
+      - Auth
   /password/reset:
     post:
       consumes:
       - application/json
       description: Request a password reset token to be sent to the user's email
       parameters:
-      - description: Email
+      - description: User object
         in: body
-        name: email
+        name: user
         required: true
         schema:
-          $ref: '#/definitions/main.ResetRequest'
+          $ref: '#/definitions/entities.ResetRequest'
       produces:
       - application/json
       responses:
@@ -416,12 +328,12 @@ paths:
         name: id
         required: true
         type: string
-      - description: New Password and Confirm Password
+      - description: User object
         in: body
-        name: password
+        name: user
         required: true
         schema:
-          $ref: '#/definitions/main.PasswordConfirmReset'
+          $ref: '#/definitions/entities.PasswordConfirmReset'
       produces:
       - application/json
       responses:
@@ -452,46 +364,12 @@ paths:
       - application/json
       description: Register a new user
       parameters:
-      - description: User object to be registered
+      - description: User object
         in: body
         name: user
         required: true
         schema:
-          $ref: '#/definitions/main.User'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/main.User'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Register a new user
-      tags:
-      - User
-  /reservation:
-    post:
-      consumes:
-      - application/json
-      description: Create a new reservation
-      parameters:
-      - description: Reservation request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/main.ReservationRequestBody'
+          $ref: '#/definitions/entities.User'
       produces:
       - application/json
       responses:
@@ -512,6 +390,43 @@ paths:
             additionalProperties:
               type: string
             type: object
+      summary: Register a new user
+      tags:
+      - Auth
+  /reservation:
+    post:
+      consumes:
+      - application/json
+      description: Create a new reservation
+      parameters:
+      - description: Reservation request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/entities.ReservationRequestBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
       summary: Create a new reservation
       tags:
       - Reservation
@@ -531,7 +446,8 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.ReservationByIDResponse'
+            additionalProperties: true
+            type: object
         "400":
           description: Bad Request
           schema:
@@ -540,6 +456,12 @@ paths:
             type: object
         "401":
           description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
           schema:
             additionalProperties:
               type: string
@@ -556,6 +478,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Detail reservation by ID
       tags:
       - Reservation
@@ -634,21 +558,23 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Calculate reservation
       tags:
       - Reservation
   /reservation/status:
-    post:
+    patch:
       consumes:
       - application/json
       description: Update status of a reservation (booked/canceled/paid)
       parameters:
-      - description: Status update request
+      - description: Reservation details
         in: body
-        name: request
+        name: reservation
         required: true
         schema:
-          $ref: '#/definitions/main.UpdateReservationRequest'
+          $ref: '#/definitions/entities.UpdateReservationRequest'
       produces:
       - application/json
       responses:
@@ -682,6 +608,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Update reservation status
       tags:
       - Reservation
@@ -715,21 +643,10 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.ScheduleResponse'
+            additionalProperties: true
+            type: object
         "400":
           description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
           schema:
             additionalProperties:
               type: string
@@ -789,41 +706,12 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Get a list of rooms
       tags:
       - Room
     post:
-      consumes:
-      - multipart/form-data
-      description: Create a new room with image validation (JPG/PNG ≤1MB)
-      parameters:
-      - description: Room name
-        in: formData
-        name: name
-        required: true
-        type: string
-      - description: Room type (small/medium/large)
-        in: formData
-        name: type
-        required: true
-        type: string
-      - description: Room capacity
-        in: formData
-        name: capacity
-        required: true
-        type: integer
-      - description: Price per hour
-        in: formData
-        name: pricePerHour
-        required: true
-        type: number
-      - description: Room image (JPG/PNG ≤1MB)
-        in: formData
-        name: image
-        required: true
-        type: file
-      produces:
-      - application/json
       responses:
         "201":
           description: Created
@@ -843,9 +731,8 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Create a new room
-      tags:
-      - Room
+      security:
+      - BearerAuth: []
   /rooms/{id}:
     delete:
       description: Delete a room by ID
@@ -881,6 +768,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Delete a room by ID
       tags:
       - Room
@@ -918,6 +807,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Get a room by ID
       tags:
       - Room
@@ -936,7 +827,7 @@ paths:
         name: room
         required: true
         schema:
-          $ref: '#/definitions/main.RoomRequest'
+          $ref: '#/definitions/entities.RoomRequest'
       produces:
       - application/json
       responses:
@@ -963,6 +854,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Update a room by ID
       tags:
       - Room
@@ -1005,6 +898,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Get room reservation schedule
       tags:
       - Room
@@ -1039,6 +934,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Save an image
       tags:
       - Image
@@ -1059,6 +956,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Get all snacks
       tags:
       - Snack
@@ -1114,12 +1013,12 @@ paths:
         name: id
         required: true
         type: string
-      - description: User object to be updated
+      - description: User object
         in: body
         name: user
         required: true
         schema:
-          $ref: '#/definitions/main.updateUser'
+          $ref: '#/definitions/entities.UpdateUser'
       produces:
       - application/json
       responses:
