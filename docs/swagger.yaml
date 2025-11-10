@@ -1,11 +1,11 @@
 definitions:
-  main.DashboardResponse:
+  entities.DashboardResponse:
     properties:
       data:
         properties:
           rooms:
             items:
-              $ref: '#/definitions/main.DashboardRoom'
+              $ref: '#/definitions/entities.DashboardRoom'
             type: array
           totalOmzet:
             type: number
@@ -19,7 +19,7 @@ definitions:
       message:
         type: string
     type: object
-  main.DashboardRoom:
+  entities.DashboardRoom:
     properties:
       id:
         type: integer
@@ -30,7 +30,7 @@ definitions:
       percentageOfUsage:
         type: number
     type: object
-  main.PasswordConfirmReset:
+  entities.PasswordConfirmReset:
     properties:
       confirm_password:
         type: string
@@ -40,7 +40,7 @@ definitions:
     - confirm_password
     - new_password
     type: object
-  main.PersonalData:
+  entities.PersonalData:
     properties:
       company:
         type: string
@@ -49,13 +49,13 @@ definitions:
       phoneNumber:
         type: string
     type: object
-  main.ReservationByIDData:
+  entities.ReservationByIDData:
     properties:
       personalData:
-        $ref: '#/definitions/main.PersonalData'
+        $ref: '#/definitions/entities.PersonalData'
       rooms:
         items:
-          $ref: '#/definitions/main.RoomInfo'
+          $ref: '#/definitions/entities.RoomInfo'
         type: array
       status:
         type: string
@@ -66,14 +66,14 @@ definitions:
       total:
         type: number
     type: object
-  main.ReservationByIDResponse:
+  entities.ReservationByIDResponse:
     properties:
       data:
-        $ref: '#/definitions/main.ReservationByIDData'
+        $ref: '#/definitions/entities.ReservationByIDData'
       message:
         type: string
     type: object
-  main.ReservationRequestBody:
+  entities.ReservationRequestBody:
     properties:
       addSnack:
         description: apakah reservasi ini melibatkan snack
@@ -88,7 +88,7 @@ definitions:
         type: string
       rooms:
         items:
-          $ref: '#/definitions/main.RoomReservationRequest'
+          $ref: '#/definitions/entities.RoomReservationRequest'
         type: array
       totalParticipants:
         description: total keseluruhan peserta
@@ -96,14 +96,14 @@ definitions:
       userID:
         type: integer
     type: object
-  main.ResetRequest:
+  entities.ResetRequest:
     properties:
       email:
         type: string
     required:
     - email
     type: object
-  main.RoomInfo:
+  entities.RoomInfo:
     properties:
       capacity:
         type: integer
@@ -120,7 +120,7 @@ definitions:
       pricePerHour:
         type: number
       snack:
-        $ref: '#/definitions/main.Snack'
+        $ref: '#/definitions/entities.Snack'
       startTime:
         type: string
       totalRoom:
@@ -130,7 +130,7 @@ definitions:
       type:
         type: string
     type: object
-  main.RoomRequest:
+  entities.RoomRequest:
     properties:
       capacity:
         type: integer
@@ -143,7 +143,7 @@ definitions:
       type:
         type: string
     type: object
-  main.RoomReservationRequest:
+  entities.RoomReservationRequest:
     properties:
       addSnack:
         description: kalau ruangan ini pakai snack atau tidak
@@ -161,7 +161,7 @@ definitions:
       startTime:
         type: string
     type: object
-  main.RoomScheduleInfo:
+  entities.RoomScheduleInfo:
     properties:
       companyName:
         type: string
@@ -171,10 +171,10 @@ definitions:
         type: string
       schedules:
         items:
-          $ref: '#/definitions/main.Schedule'
+          $ref: '#/definitions/entities.Schedule'
         type: array
     type: object
-  main.Schedule:
+  entities.Schedule:
     properties:
       endTime:
         type: string
@@ -183,11 +183,11 @@ definitions:
       status:
         type: string
     type: object
-  main.ScheduleResponse:
+  entities.ScheduleResponse:
     properties:
       data:
         items:
-          $ref: '#/definitions/main.RoomScheduleInfo'
+          $ref: '#/definitions/entities.RoomScheduleInfo'
         type: array
       message:
         type: string
@@ -200,7 +200,7 @@ definitions:
       totalPage:
         type: integer
     type: object
-  main.Snack:
+  entities.Snack:
     properties:
       category:
         type: string
@@ -213,7 +213,7 @@ definitions:
       unit:
         type: string
     type: object
-  main.UpdateReservationRequest:
+  entities.UpdateReservationRequest:
     properties:
       reservation_id:
         type: integer
@@ -227,24 +227,7 @@ definitions:
     - reservation_id
     - status
     type: object
-  main.User:
-    properties:
-      email:
-        type: string
-      name:
-        type: string
-      password:
-        description: password harus ada angka, huruf besar, huruf kecil, dan simbol
-        type: string
-      username:
-        type: string
-    required:
-    - email
-    - name
-    - password
-    - username
-    type: object
-  main.updateUser:
+  entities.UpdateUser:
     properties:
       email:
         type: string
@@ -271,6 +254,23 @@ definitions:
         type: string
       username:
         type: string
+    type: object
+  entities.User:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        description: password harus ada angka, huruf besar, huruf kecil, dan simbol
+        type: string
+      username:
+        type: string
+    required:
+    - email
+    - name
+    - password
+    - username
     type: object
 info:
   contact: {}
@@ -301,7 +301,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.DashboardResponse'
+            $ref: '#/definitions/entities.DashboardResponse'
         "400":
           description: Bad Request
           schema:
@@ -331,44 +331,6 @@ paths:
       summary: Get dashboard analytics
       tags:
       - Dashboard
-  /history:
-    get:
-      description: Retrieve meeting reservation history filtered by user_id, room_id,
-        or date.
-      parameters:
-      - description: User ID
-        in: query
-        name: user_id
-        type: string
-      - description: Room ID
-        in: query
-        name: room_id
-        type: string
-      - description: Date (YYYY-MM-DD)
-        in: query
-        name: date
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: History retrieved successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Invalid query parameter
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Failed to retrieve history
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Get meeting reservation history
-      tags:
-      - Reservation
   /password/reset:
     post:
       consumes:
@@ -380,7 +342,7 @@ paths:
         name: email
         required: true
         schema:
-          $ref: '#/definitions/main.ResetRequest'
+          $ref: '#/definitions/entities.ResetRequest'
       produces:
       - application/json
       responses:
@@ -421,7 +383,7 @@ paths:
         name: password
         required: true
         schema:
-          $ref: '#/definitions/main.PasswordConfirmReset'
+          $ref: '#/definitions/entities.PasswordConfirmReset'
       produces:
       - application/json
       responses:
@@ -457,14 +419,14 @@ paths:
         name: user
         required: true
         schema:
-          $ref: '#/definitions/main.User'
+          $ref: '#/definitions/entities.User'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/main.User'
+            $ref: '#/definitions/entities.User'
         "400":
           description: Bad Request
           schema:
@@ -491,7 +453,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/main.ReservationRequestBody'
+          $ref: '#/definitions/entities.ReservationRequestBody'
       produces:
       - application/json
       responses:
@@ -512,6 +474,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Create a new reservation
       tags:
       - Reservation
@@ -531,7 +495,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.ReservationByIDResponse'
+            $ref: '#/definitions/entities.ReservationByIDResponse'
         "400":
           description: Bad Request
           schema:
@@ -556,6 +520,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Detail reservation by ID
       tags:
       - Reservation
@@ -634,11 +600,53 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Calculate reservation
       tags:
       - Reservation
+  /reservation/history:
+    get:
+      description: Retrieve meeting reservation history filtered by user_id, room_id,
+        or date.
+      parameters:
+      - description: User ID
+        in: query
+        name: user_id
+        type: string
+      - description: Room ID
+        in: query
+        name: room_id
+        type: string
+      - description: Date (YYYY-MM-DD)
+        in: query
+        name: date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: History retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid query parameter
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Failed to retrieve history
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get meeting reservation history
+      tags:
+      - Reservation
   /reservation/status:
-    post:
+    patch:
       consumes:
       - application/json
       description: Update status of a reservation (booked/canceled/paid)
@@ -648,7 +656,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/main.UpdateReservationRequest'
+          $ref: '#/definitions/entities.UpdateReservationRequest'
       produces:
       - application/json
       responses:
@@ -682,6 +690,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Update reservation status
       tags:
       - Reservation
@@ -715,7 +725,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.ScheduleResponse'
+            $ref: '#/definitions/entities.ScheduleResponse'
         "400":
           description: Bad Request
           schema:
@@ -789,6 +799,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Get a list of rooms
       tags:
       - Room
@@ -843,6 +855,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Create a new room
       tags:
       - Room
@@ -881,6 +895,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Delete a room by ID
       tags:
       - Room
@@ -918,6 +934,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Get a room by ID
       tags:
       - Room
@@ -936,7 +954,7 @@ paths:
         name: room
         required: true
         schema:
-          $ref: '#/definitions/main.RoomRequest'
+          $ref: '#/definitions/entities.RoomRequest'
       produces:
       - application/json
       responses:
@@ -963,6 +981,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Update a room by ID
       tags:
       - Room
@@ -1005,10 +1025,34 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Get room reservation schedule
       tags:
       - Room
-  /save-image:
+  /snacks:
+    get:
+      description: Get all snacks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get all snacks
+      tags:
+      - Snack
+  /uploads:
     post:
       consumes:
       - multipart/form-data
@@ -1039,29 +1083,11 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - BearerAuth: []
       summary: Save an image
       tags:
       - Image
-  /snacks:
-    get:
-      description: Get all snacks
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Get all snacks
-      tags:
-      - Snack
   /users/{id}:
     get:
       consumes:
@@ -1119,7 +1145,7 @@ paths:
         name: user
         required: true
         schema:
-          $ref: '#/definitions/main.updateUser'
+          $ref: '#/definitions/entities.UpdateUser'
       produces:
       - application/json
       responses:

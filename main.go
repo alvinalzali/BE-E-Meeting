@@ -59,10 +59,10 @@ var DefaultRoomURL string = BaseURL + "/assets/default/img/default_room.jpg"
 // @description                 Type "Bearer" followed by a space and JWT token.
 
 func main() {
+	// Load .env file if it exists (optional for Docker environments)
 	err := godotenv.Load()
 	if err != nil {
-		fmt.Println("Error loading .env file")
-		return
+		fmt.Println("Warning: .env file not found, using environment variables from system")
 	}
 
 	dbHost := os.Getenv("db_host")
@@ -73,18 +73,22 @@ func main() {
 
 	db = ConnectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
 
-	//berikan inputan switch 1 untuk migrate up lalu kembali ke menu, 2 untuk migrate down, 3 untuk continue
-	fmt.Println("Enter 1 for migrate up, 2 for migrate down, 3 for continue:")
-	var input int
-	fmt.Scanln(&input)
-	switch input {
-	case 1:
-		migrateUp(db)
-	case 2:
-		migrateDown(db)
+	// Skip interactive migration prompt in Docker (use separate migrate service)
+	skipMigration := os.Getenv("SKIP_MIGRATION")
+	if skipMigration != "true" {
+		//berikan inputan switch 1 untuk migrate up lalu kembali ke menu, 2 untuk migrate down, 3 untuk continue
+		fmt.Println("Enter 1 for migrate up, 2 for migrate down, 3 for continue:")
+		var input int
+		fmt.Scanln(&input)
+		switch input {
+		case 1:
+			migrateUp(db)
+		case 2:
+			migrateDown(db)
+		}
 	}
 
-	JwtSecret = []byte(os.Getenv("jwt_secret"))
+	JwtSecret = []byte(os.Getenv("secret_key"))
 
 	e := echo.New()
 
@@ -134,6 +138,8 @@ func main() {
 	// route users
 	userGroup.GET("/:id", GetUserByID)
 	userGroup.PUT("/:id", UpdateUserByID)
+
+	fmt.Println("Starting server on port 8080...")
 
 	e.Logger.Fatal(e.Start(":8080"))
 
@@ -324,8 +330,8 @@ func generateResetToken(email string) (string, error) {
 // @Tags User
 // @Accept json
 // @Produce json
-// @Param user body User true "User object to be registered"
-// @Success 201 {object} User
+// @Param user body entities.User true "User object to be registered"
+// @Success 201 {object} entities.User
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /register [post]
@@ -397,7 +403,7 @@ func hashPassword(password string) (string, error) {
 // @Accept json
 // @Produce json
 // @Param id path string true "Reset Token"
-// @Param password body PasswordConfirmReset true "New Password and Confirm Password"
+// @Param password body entities.PasswordConfirmReset true "New Password and Confirm Password"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -459,7 +465,7 @@ func PasswordResetId(c echo.Context) error {
 // @Tags User
 // @Accept json
 // @Produce json
-// @Param email body ResetRequest true "Email"
+// @Param email body entities.ResetRequest true "Email"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -583,7 +589,7 @@ func GetUserByID(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param id path string true "User ID"
-// @Param user body main.updateUser true "User object to be updated"
+// @Param user body entities.UpdateUser true "User object to be updated"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -721,7 +727,8 @@ func UpdateUserByID(c echo.Context) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Router /save-image [post]
+// @Security BearerAuth
+// @Router /uploads [post]
 func UploadImage(c echo.Context) error {
 	file, err := c.FormFile("image")
 	if err != nil {
@@ -786,6 +793,7 @@ func UploadImage(c echo.Context) error {
 // @Success 201 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /rooms [post]
 func CreateRoom(c echo.Context) error {
 	var req entities.RoomRequest
@@ -938,6 +946,7 @@ func CreateRoom(c echo.Context) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /rooms [get]
 func GetRooms(c echo.Context) error {
 	name := c.QueryParam("name")
@@ -1049,6 +1058,7 @@ func GetRooms(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /rooms/{id} [get]
 func GetRoomByID(c echo.Context) error {
 	idParam := c.Param("id")
@@ -1100,11 +1110,12 @@ func GetRoomByID(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param id path string true "Room ID"
-// @Param room body main.RoomRequest true "Room details"
+// @Param room body entities.RoomRequest true "Room details"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /rooms/{id} [put]
 func UpdateRoom(c echo.Context) error {
 	idParam := c.Param("id")
@@ -1154,6 +1165,7 @@ func UpdateRoom(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /rooms/{id} [delete]
 func DeleteRoom(c echo.Context) error {
 	idParam := c.Param("id")
@@ -1185,6 +1197,7 @@ func DeleteRoom(c echo.Context) error {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /snacks [get]
 func GetSnacks(c echo.Context) error {
 	rows, err := db.Query(`SELECT id, name, unit, price, category FROM snacks ORDER BY id ASC`)
@@ -1229,6 +1242,7 @@ func GetSnacks(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /reservation/calculation [get]
 func CalculateReservation(c echo.Context) error {
 	roomID, _ := strconv.Atoi(c.QueryParam("room_id"))
@@ -1345,10 +1359,11 @@ func CalculateReservation(c echo.Context) error {
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param request body ReservationRequestBody true "Reservation request body"
+// @Param request body entities.ReservationRequestBody true "Reservation request body"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /reservation [post]
 func CreateReservation(c echo.Context) error {
 	var req entities.ReservationRequestBody
@@ -1526,7 +1541,8 @@ func CreateReservation(c echo.Context) error {
 // @Success 200 {object} map[string]interface{} "History retrieved successfully"
 // @Failure 400 {object} map[string]interface{} "Invalid query parameter"
 // @Failure 500 {object} map[string]interface{} "Failed to retrieve history"
-// @Router /history [get]
+// @Security BearerAuth
+// @Router /reservation/history [get]
 func GetReservationHistory(c echo.Context) error {
 	startDate := c.QueryParam("startDate")
 	endDate := c.QueryParam("endDate")
@@ -1712,11 +1728,12 @@ func GetReservationHistory(c echo.Context) error {
 // @Tags Reservation
 // @Produce json
 // @Param id path int true "Reservation ID"
-// @Success 200 {object} ReservationByIDResponse
+// @Success 200 {object} entities.ReservationByIDResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /reservation/{id} [get]
 func GetReservationByID(c echo.Context) error {
 	idParam := c.Param("id")
@@ -1842,12 +1859,13 @@ func GetReservationByID(c echo.Context) error {
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param request body UpdateReservationRequest true "Status update request"
+// @Param request body entities.UpdateReservationRequest true "Status update request"
 // @Success 200 {object} map[string]string "message: update status success"
 // @Failure 400 {object} map[string]string "message: bad request/reservation already canceled/paid"
 // @Failure 401 {object} map[string]string "message: unauthorized"
 // @Failure 404 {object} map[string]string "message: url not found"
 // @Failure 500 {object} map[string]string "message: internal server error"
+// @Security BearerAuth
 // @Router /reservation/status [patch]
 func UpdateReservationStatus(c echo.Context) error {
 	var req entities.UpdateReservationRequest
@@ -1982,7 +2000,7 @@ func UpdateReservationStatus(c echo.Context) error {
 // @Param endDate query string true "End date (YYYY-MM-DD)"
 // @Param page query int false "Page number (default: 1)"
 // @Param pageSize query int false "Page size (default: 10)"
-// @Success 200 {object} ScheduleResponse
+// @Success 200 {object} entities.ScheduleResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -2147,7 +2165,7 @@ func GetReservationSchedules(c echo.Context) error {
 // @Produce json
 // @Param startDate query string true "Start date (YYYY-MM-DD)"
 // @Param endDate query string true "End date (YYYY-MM-DD)"
-// @Success 200 {object} DashboardResponse
+// @Success 200 {object} entities.DashboardResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -2278,6 +2296,7 @@ func GetDashboard(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Security BearerAuth
 // @Router /rooms/{id}/reservation [get]
 func GetRoomReservationSchedule(c echo.Context) error {
 	// Get room ID from path parameter
