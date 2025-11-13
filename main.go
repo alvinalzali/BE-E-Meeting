@@ -103,37 +103,33 @@ func main() {
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
 
 	// harus pake auth
-	authGroup := e.Group("/")
-	authGroup.Use(middlewareAuth)
-	authGroup.POST("uploads", UploadImage)
+	e.POST("/uploads", UploadImage, roleAuthMiddleware("admin", "user"))
 
 	// route for rooms
-	authGroup.POST("rooms", CreateRoom)
-	authGroup.GET("rooms", GetRooms)
-	authGroup.GET("rooms/:id", GetRoomByID)
-	authGroup.GET("rooms/:id/reservation", GetRoomReservationSchedule)
-	authGroup.PUT("rooms/:id", UpdateRoom)
-	authGroup.DELETE("rooms/:id", DeleteRoom)
-	authGroup.GET("snacks", GetSnacks)
+	e.POST("/rooms", CreateRoom, roleAuthMiddleware("admin"))
+	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin"))
+	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin"))
+	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin"))
+	e.PUT("/rooms/:id", UpdateRoom, roleAuthMiddleware("admin"))
+	e.DELETE("/rooms/:id", DeleteRoom, roleAuthMiddleware("admin"))
+
+	// route for snacks
+	e.GET("/snacks", GetSnacks, roleAuthMiddleware("admin", "user"))
 
 	// route for reservations
-	authGroup.GET("reservation/calculation", CalculateReservation)
-	authGroup.POST("reservation", CreateReservation)
-	authGroup.GET("reservation/history", GetReservationHistory)
-	authGroup.PATCH("reservation/status", UpdateReservationStatus)
-	authGroup.GET("reservation/:id", GetReservationByID)
-	authGroup.GET("reservations/schedules", GetReservationSchedules)
+	e.GET("/reservation/calculation", CalculateReservation, roleAuthMiddleware("admin", "user"))
+	e.POST("/reservation", CreateReservation, roleAuthMiddleware("admin", "user"))
+	e.GET("/reservation/history", GetReservationHistory, roleAuthMiddleware("user"))
+	e.PATCH("/reservation/status", UpdateReservationStatus, roleAuthMiddleware("admin", "user"))
+	e.GET("/reservation/:id", GetReservationByID, roleAuthMiddleware("admin", "user"))
+	e.GET("/reservations/schedules", GetReservationSchedules, roleAuthMiddleware("admin"))
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
-	authGroup.GET("dashboard", GetDashboard)
-
-	// route group users
-	userGroup := e.Group("/users")
-	userGroup.Use(middlewareAuth)
+	e.GET("/dashboard", GetDashboard, roleAuthMiddleware("admin"))
 
 	// route users
-	userGroup.GET("/:id", GetUserByID)
-	userGroup.PUT("/:id", UpdateUserByID)
+	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user"))
+	e.PUT("/users/:id", UpdateUserByID)
 
 	e.Logger.Fatal(e.Start(":8080"))
 
@@ -516,32 +512,105 @@ func PasswordReset(c echo.Context) error {
 }
 
 // fungsi middleware untuk login dan verif jwt
-func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		authHeader := c.Request().Header.Get("Authorization")
-		if authHeader == "" {
+func roleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+
+			// Ambil Authorization Header
+			authHeader := c.Request().Header.Get("Authorization")
+			if authHeader == "" {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
+			}
+
+			// parse token jwt
+			token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
+				return JwtSecret, nil
+			})
+
+			if err != nil || !token.Valid {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
+			}
+
+			//ekstrak claims
+			claims, ok := token.Claims.(jwt.MapClaims)
+			if !ok {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
+			}
+
+			fmt.Println("Authenticated user:", claims["username"])
+			fmt.Println("Claims:", claims)
+			fmt.Println("Claims:", claims["role"])
+
+			// Ambil role dari claims
+			var userRoles []string
+
+			// Coba ekstrak sebagai []interface{} (untuk multiple roles)
+			if rolesClaimSlice, ok := claims["role"].([]interface{}); ok {
+				for _, roleInterface := range rolesClaimSlice {
+					if role, ok := roleInterface.(string); ok {
+						userRoles = append(userRoles, role)
+					}
+				}
+			} else if roleClaimString, ok := claims["role"].(string); ok {
+				// Coba ekstrak sebagai string (untuk single role)
+				userRoles = append(userRoles, roleClaimString)
+			} else {
+				// Jika tidak dapat di-parse sebagai slice atau string, print dan kembalikan Unauthorized
+				fmt.Println("Claims[role] tidak dalam format yang diharapkan:", claims["role"])
+				// Cek apakah Anda perlu mengembalikan error di sini jika Anda yakin role HARUS ada
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Role claim missing or invalid format"})
+			}
+
+			// Tambahkan pengecekan jika userRoles kosong setelah ekstraksi
+			if len(userRoles) == 0 {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "No valid roles found in token"})
+			}
+
+			// Cek lagi untuk debug
+			fmt.Println("User Roles yang berhasil diekstrak:", userRoles)
+
+			// cek role sesuai dengan role required
+			for _, requiredRole := range requiredRoles {
+				for _, userRole := range userRoles {
+					if requiredRole == userRole {
+						// lanjurt ke handler kalau cocok
+						return next(c)
+					}
+				}
+			}
+
+			// kalau role ga cocok
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
 		}
-		token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
-			return JwtSecret, nil
-		})
-
-		if err != nil || !token.Valid {
-			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
-		}
-
-		//ekstrak claims
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
-		}
-
-		fmt.Println("Authenticated user:", claims["username"])
-
-		//lanjut ke handler
-		return next(c)
 	}
 }
+
+// func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
+// 	return func(c echo.Context) error {
+// 		authHeader := c.Request().Header.Get("Authorization")
+// 		if authHeader == "" {
+// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
+// 		}
+// 		token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
+// 			return JwtSecret, nil
+// 		})
+
+// 		if err != nil || !token.Valid {
+// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
+// 		}
+
+// 		//ekstrak claims
+// 		claims, ok := token.Claims.(jwt.MapClaims)
+// 		if !ok {
+// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
+// 		}
+
+// 		fmt.Println("Authenticated user:", claims["username"])
+
+// 		//lanjut ke handler
+// 		return next(c)
+// 	}
+// }
 
 // GetUserByID godoc
 // @Summary Get user by ID
