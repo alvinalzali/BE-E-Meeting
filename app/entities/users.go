@@ -1,6 +1,10 @@
 package entities
 
-import "github.com/golang-jwt/jwt/v5"
+import (
+	"database/sql"
+
+	"github.com/golang-jwt/jwt/v5"
+)
 
 type Login struct {
 	//login using username or email
@@ -17,16 +21,16 @@ type User struct {
 }
 
 type GetUser struct {
-	Created_at string `json:"createdAt"`
-	Email      string `json:"email"`
-	Id         string `json:"id"`
-	Avatar_url string `json:"imageURL"`
-	Lang       string `json:"language"`
-	Role       string `json:"role"`
-	Status     string `json:"status"`
-	Updated_at string `json:"updatedAt"`
-	Username   string `json:"username"`
-	Name       string `json:"name"`
+	Created_at string         `json:"createdAt"`
+	Email      string         `json:"email"`
+	Id         string         `json:"id"`
+	Avatar_url string         `json:"imageURL"`
+	Lang       string         `json:"language"`
+	Role       string         `json:"role"`
+	Status     string         `json:"status"`
+	Updated_at sql.NullString `json:"updatedAt"`
+	Username   string         `json:"username"`
+	Name       string         `json:"name"`
 }
 
 type UpdateUser struct {

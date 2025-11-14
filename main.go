@@ -107,37 +107,33 @@ func main() {
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
 
 	// harus pake auth
-	authGroup := e.Group("/")
-	authGroup.Use(middlewareAuth)
-	authGroup.POST("uploads", UploadImage)
+	e.POST("/uploads", UploadImage, roleAuthMiddleware("admin", "user"))
 
 	// route for rooms
-	authGroup.POST("rooms", CreateRoom)
-	authGroup.GET("rooms", GetRooms)
-	authGroup.GET("rooms/:id", GetRoomByID)
-	authGroup.GET("rooms/:id/reservation", GetRoomReservationSchedule)
-	authGroup.PUT("rooms/:id", UpdateRoom)
-	authGroup.DELETE("rooms/:id", DeleteRoom)
-	authGroup.GET("snacks", GetSnacks)
+	e.POST("/rooms", CreateRoom, roleAuthMiddleware("admin"))
+	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin"))
+	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin"))
+	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin"))
+	e.PUT("/rooms/:id", UpdateRoom, roleAuthMiddleware("admin"))
+	e.DELETE("/rooms/:id", DeleteRoom, roleAuthMiddleware("admin"))
+
+	// route for snacks
+	e.GET("/snacks", GetSnacks, roleAuthMiddleware("admin", "user"))
 
 	// route for reservations
-	authGroup.GET("reservation/calculation", CalculateReservation)
-	authGroup.POST("reservation", CreateReservation)
-	authGroup.GET("reservation/history", GetReservationHistory)
-	authGroup.PATCH("reservation/status", UpdateReservationStatus)
-	authGroup.GET("reservation/:id", GetReservationByID)
-	authGroup.GET("reservations/schedules", GetReservationSchedules)
+	e.GET("/reservation/calculation", CalculateReservation, roleAuthMiddleware("admin", "user"))
+	e.POST("/reservation", CreateReservation, roleAuthMiddleware("admin", "user"))
+	e.GET("/reservation/history", GetReservationHistory, roleAuthMiddleware("user"))
+	e.PATCH("/reservation/status", UpdateReservationStatus, roleAuthMiddleware("admin", "user"))
+	e.GET("/reservation/:id", GetReservationByID, roleAuthMiddleware("admin", "user"))
+	e.GET("/reservations/schedules", GetReservationSchedules, roleAuthMiddleware("admin"))
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
-	authGroup.GET("dashboard", GetDashboard)
-
-	// route group users
-	userGroup := e.Group("/users")
-	userGroup.Use(middlewareAuth)
+	e.GET("/dashboard", GetDashboard, roleAuthMiddleware("admin"))
 
 	// route users
-	userGroup.GET("/:id", GetUserByID)
-	userGroup.PUT("/:id", UpdateUserByID)
+	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user"))
+	e.PUT("/users/:id", UpdateUserByID)
 
 	fmt.Println("Starting server on port 8080...")
 
@@ -200,6 +196,18 @@ func ConnectDB(username, password, dbname, host string, port int) *sql.DB {
 	return db
 }
 
+// login godoc
+// @Summary Login user
+// @Description Login user
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param loginData body entities.Login true "Login data"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /login [post]
 func login(c echo.Context) error {
 	var loginData entities.Login
 
@@ -327,11 +335,11 @@ func generateResetToken(email string) (string, error) {
 // RegisterUser godoc
 // @Summary Register a new user
 // @Description Register a new user
-// @Tags User
+// @Tags Auth
 // @Accept json
 // @Produce json
-// @Param user body entities.User true "User object to be registered"
-// @Success 201 {object} entities.User
+// @Param user body entities.User true "User object"
+// @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /register [post]
@@ -363,9 +371,12 @@ func RegisterUser(c echo.Context) error {
 	//insert variable default, Enum status, role, lang
 	status := "active"
 
+	//var default avatar
+	avatar := DefaultAvatarURL
+
 	// insert to db
-	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status) VALUES ($1, $2, $3, $4, $5)`
-	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status)
+	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status) VALUES ($1, $2, $3, $4, $5, $6)`
+	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status, avatar)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Database Error"
 	}
@@ -403,7 +414,7 @@ func hashPassword(password string) (string, error) {
 // @Accept json
 // @Produce json
 // @Param id path string true "Reset Token"
-// @Param password body entities.PasswordConfirmReset true "New Password and Confirm Password"
+// @Param user body entities.PasswordConfirmReset true "New Password and Confirm Password"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -465,7 +476,7 @@ func PasswordResetId(c echo.Context) error {
 // @Tags User
 // @Accept json
 // @Produce json
-// @Param email body entities.ResetRequest true "Email"
+// @Param user body entities.ResetRequest true "User object"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -507,32 +518,105 @@ func PasswordReset(c echo.Context) error {
 }
 
 // fungsi middleware untuk login dan verif jwt
-func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		authHeader := c.Request().Header.Get("Authorization")
-		if authHeader == "" {
+func roleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+
+			// Ambil Authorization Header
+			authHeader := c.Request().Header.Get("Authorization")
+			if authHeader == "" {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
+			}
+
+			// parse token jwt
+			token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
+				return JwtSecret, nil
+			})
+
+			if err != nil || !token.Valid {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
+			}
+
+			//ekstrak claims
+			claims, ok := token.Claims.(jwt.MapClaims)
+			if !ok {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
+			}
+
+			fmt.Println("Authenticated user:", claims["username"])
+			fmt.Println("Claims:", claims)
+			fmt.Println("Claims:", claims["role"])
+
+			// Ambil role dari claims
+			var userRoles []string
+
+			// Coba ekstrak sebagai []interface{} (untuk multiple roles)
+			if rolesClaimSlice, ok := claims["role"].([]interface{}); ok {
+				for _, roleInterface := range rolesClaimSlice {
+					if role, ok := roleInterface.(string); ok {
+						userRoles = append(userRoles, role)
+					}
+				}
+			} else if roleClaimString, ok := claims["role"].(string); ok {
+				// Coba ekstrak sebagai string (untuk single role)
+				userRoles = append(userRoles, roleClaimString)
+			} else {
+				// Jika tidak dapat di-parse sebagai slice atau string, print dan kembalikan Unauthorized
+				fmt.Println("Claims[role] tidak dalam format yang diharapkan:", claims["role"])
+				// Cek apakah Anda perlu mengembalikan error di sini jika Anda yakin role HARUS ada
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Role claim missing or invalid format"})
+			}
+
+			// Tambahkan pengecekan jika userRoles kosong setelah ekstraksi
+			if len(userRoles) == 0 {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "No valid roles found in token"})
+			}
+
+			// Cek lagi untuk debug
+			fmt.Println("User Roles yang berhasil diekstrak:", userRoles)
+
+			// cek role sesuai dengan role required
+			for _, requiredRole := range requiredRoles {
+				for _, userRole := range userRoles {
+					if requiredRole == userRole {
+						// lanjurt ke handler kalau cocok
+						return next(c)
+					}
+				}
+			}
+
+			// kalau role ga cocok
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
 		}
-		token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
-			return JwtSecret, nil
-		})
-
-		if err != nil || !token.Valid {
-			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
-		}
-
-		//ekstrak claims
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
-		}
-
-		fmt.Println("Authenticated user:", claims["username"])
-
-		//lanjut ke handler
-		return next(c)
 	}
 }
+
+// func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
+// 	return func(c echo.Context) error {
+// 		authHeader := c.Request().Header.Get("Authorization")
+// 		if authHeader == "" {
+// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
+// 		}
+// 		token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
+// 			return JwtSecret, nil
+// 		})
+
+// 		if err != nil || !token.Valid {
+// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
+// 		}
+
+// 		//ekstrak claims
+// 		claims, ok := token.Claims.(jwt.MapClaims)
+// 		if !ok {
+// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
+// 		}
+
+// 		fmt.Println("Authenticated user:", claims["username"])
+
+// 		//lanjut ke handler
+// 		return next(c)
+// 	}
+// }
 
 // GetUserByID godoc
 // @Summary Get user by ID
@@ -570,7 +654,6 @@ func GetUserByID(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error", "detail": err.Error()})
 	}
 
-	//jika user.Avatar_url kosong, ganti ke default
 	if user.Avatar_url == "" {
 		user.Avatar_url = DefaultAvatarURL
 	}
@@ -589,7 +672,7 @@ func GetUserByID(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param id path string true "User ID"
-// @Param user body entities.UpdateUser true "User object to be updated"
+// @Param user body entities.UpdateUser true "User object"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -728,7 +811,7 @@ func UpdateUserByID(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Security BearerAuth
-// @Router /uploads [post]
+// @Router /save-image [post]
 func UploadImage(c echo.Context) error {
 	file, err := c.FormFile("image")
 	if err != nil {
@@ -790,6 +873,7 @@ func UploadImage(c echo.Context) error {
 // @Param capacity formData int true "Room capacity"
 // @Param pricePerHour formData number true "Price per hour"
 // @Param image formData file true "Room image (JPG/PNG ≤1MB)"
+
 // @Success 201 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -1542,7 +1626,7 @@ func CreateReservation(c echo.Context) error {
 // @Failure 400 {object} map[string]interface{} "Invalid query parameter"
 // @Failure 500 {object} map[string]interface{} "Failed to retrieve history"
 // @Security BearerAuth
-// @Router /reservation/history [get]
+// @Router /history [get]
 func GetReservationHistory(c echo.Context) error {
 	startDate := c.QueryParam("startDate")
 	endDate := c.QueryParam("endDate")
@@ -1728,11 +1812,12 @@ func GetReservationHistory(c echo.Context) error {
 // @Tags Reservation
 // @Produce json
 // @Param id path int true "Reservation ID"
-// @Success 200 {object} entities.ReservationByIDResponse
+// @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
-// @Failure 401 {object} map[string]string
-// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Security BearerAuth
 // @Router /reservation/{id} [get]
 func GetReservationByID(c echo.Context) error {
@@ -1859,7 +1944,7 @@ func GetReservationByID(c echo.Context) error {
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param request body entities.UpdateReservationRequest true "Status update request"
+// @Param reservation body entities.UpdateReservationRequest true "Reservation details"
 // @Success 200 {object} map[string]string "message: update status success"
 // @Failure 400 {object} map[string]string "message: bad request/reservation already canceled/paid"
 // @Failure 401 {object} map[string]string "message: unauthorized"
@@ -2000,10 +2085,8 @@ func UpdateReservationStatus(c echo.Context) error {
 // @Param endDate query string true "End date (YYYY-MM-DD)"
 // @Param page query int false "Page number (default: 1)"
 // @Param pageSize query int false "Page size (default: 10)"
-// @Success 200 {object} entities.ScheduleResponse
+// @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
-// @Failure 401 {object} map[string]string
-// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Security BearerAuth
 // @Router /reservations/schedules [get]
@@ -2165,7 +2248,7 @@ func GetReservationSchedules(c echo.Context) error {
 // @Produce json
 // @Param startDate query string true "Start date (YYYY-MM-DD)"
 // @Param endDate query string true "End date (YYYY-MM-DD)"
-// @Success 200 {object} entities.DashboardResponse
+// @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string

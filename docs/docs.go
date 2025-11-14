@@ -54,7 +54,8 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/entities.DashboardResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -96,6 +97,128 @@ const docTemplate = `{
                 }
             }
         },
+        "/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieve meeting reservation history filtered by user_id, room_id, or date.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reservation"
+                ],
+                "summary": "Get meeting reservation history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Room ID",
+                        "name": "room_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Date (YYYY-MM-DD)",
+                        "name": "date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "History retrieved successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameter",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to retrieve history",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/login": {
+            "post": {
+                "description": "Login user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Login user",
+                "parameters": [
+                    {
+                        "description": "Login data",
+                        "name": "loginData",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/entities.Login"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/password/reset": {
             "post": {
                 "description": "Request a password reset token to be sent to the user's email",
@@ -111,8 +234,8 @@ const docTemplate = `{
                 "summary": "Request password reset",
                 "parameters": [
                     {
-                        "description": "Email",
-                        "name": "email",
+                        "description": "User object",
+                        "name": "user",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -174,7 +297,7 @@ const docTemplate = `{
                     },
                     {
                         "description": "New Password and Confirm Password",
-                        "name": "password",
+                        "name": "user",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -223,12 +346,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "User"
+                    "Auth"
                 ],
                 "summary": "Register a new user",
                 "parameters": [
                     {
-                        "description": "User object to be registered",
+                        "description": "User object",
                         "name": "user",
                         "in": "body",
                         "required": true,
@@ -238,10 +361,11 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "201": {
-                        "description": "Created",
+                    "200": {
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/entities.User"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -441,66 +565,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/reservation/history": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Retrieve meeting reservation history filtered by user_id, room_id, or date.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Reservation"
-                ],
-                "summary": "Get meeting reservation history",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "User ID",
-                        "name": "user_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Room ID",
-                        "name": "room_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Date (YYYY-MM-DD)",
-                        "name": "date",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "History retrieved successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid query parameter",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to retrieve history",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/reservation/status": {
             "patch": {
                 "security": [
@@ -521,8 +585,8 @@ const docTemplate = `{
                 "summary": "Update reservation status",
                 "parameters": [
                     {
-                        "description": "Status update request",
-                        "name": "request",
+                        "description": "Reservation details",
+                        "name": "reservation",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -607,7 +671,8 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/entities.ReservationByIDResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -621,6 +686,15 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -699,29 +773,12 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/entities.ScheduleResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -820,54 +877,6 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
-                    }
-                ],
-                "description": "Create a new room with image validation (JPG/PNG ≤1MB)",
-                "consumes": [
-                    "multipart/form-data"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Room"
-                ],
-                "summary": "Create a new room",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Room name",
-                        "name": "name",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Room type (small/medium/large)",
-                        "name": "type",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Room capacity",
-                        "name": "capacity",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "number",
-                        "description": "Price per hour",
-                        "name": "pricePerHour",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "file",
-                        "description": "Room image (JPG/PNG ≤1MB)",
-                        "name": "image",
-                        "in": "formData",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -1163,42 +1172,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/snacks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Get all snacks",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Snack"
-                ],
-                "summary": "Get all snacks",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/uploads": {
+        "/save-image": {
             "post": {
                 "security": [
                     {
@@ -1240,6 +1214,41 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/snacks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all snacks",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Snack"
+                ],
+                "summary": "Get all snacks",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "500": {
@@ -1344,7 +1353,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "User object to be updated",
+                        "description": "User object",
                         "name": "user",
                         "in": "body",
                         "required": true,
@@ -1393,51 +1402,19 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "entities.DashboardResponse": {
+        "entities.Login": {
             "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
             "properties": {
-                "data": {
-                    "type": "object",
-                    "properties": {
-                        "rooms": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/entities.DashboardRoom"
-                            }
-                        },
-                        "totalOmzet": {
-                            "type": "number"
-                        },
-                        "totalReservation": {
-                            "type": "integer"
-                        },
-                        "totalRoom": {
-                            "type": "integer"
-                        },
-                        "totalVisitor": {
-                            "type": "integer"
-                        }
-                    }
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "entities.DashboardRoom": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
+                "password": {
                     "type": "string"
                 },
-                "omzet": {
-                    "type": "number"
-                },
-                "percentageOfUsage": {
-                    "type": "number"
+                "username": {
+                    "description": "login using username or email",
+                    "type": "string"
                 }
             }
         },
@@ -1452,57 +1429,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "new_password": {
-                    "type": "string"
-                }
-            }
-        },
-        "entities.PersonalData": {
-            "type": "object",
-            "properties": {
-                "company": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "phoneNumber": {
-                    "type": "string"
-                }
-            }
-        },
-        "entities.ReservationByIDData": {
-            "type": "object",
-            "properties": {
-                "personalData": {
-                    "$ref": "#/definitions/entities.PersonalData"
-                },
-                "rooms": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/entities.RoomInfo"
-                    }
-                },
-                "status": {
-                    "type": "string"
-                },
-                "subTotalRoom": {
-                    "type": "number"
-                },
-                "subTotalSnack": {
-                    "type": "number"
-                },
-                "total": {
-                    "type": "number"
-                }
-            }
-        },
-        "entities.ReservationByIDResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/entities.ReservationByIDData"
-                },
-                "message": {
                     "type": "string"
                 }
             }
@@ -1552,47 +1478,6 @@ const docTemplate = `{
                 }
             }
         },
-        "entities.RoomInfo": {
-            "type": "object",
-            "properties": {
-                "capacity": {
-                    "type": "integer"
-                },
-                "duration": {
-                    "type": "integer"
-                },
-                "endTime": {
-                    "type": "string"
-                },
-                "imageURL": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "participant": {
-                    "type": "integer"
-                },
-                "pricePerHour": {
-                    "type": "number"
-                },
-                "snack": {
-                    "$ref": "#/definitions/entities.Snack"
-                },
-                "startTime": {
-                    "type": "string"
-                },
-                "totalRoom": {
-                    "type": "number"
-                },
-                "totalSnack": {
-                    "type": "number"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
         "entities.RoomRequest": {
             "type": "object",
             "properties": {
@@ -1635,86 +1520,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "startTime": {
-                    "type": "string"
-                }
-            }
-        },
-        "entities.RoomScheduleInfo": {
-            "type": "object",
-            "properties": {
-                "companyName": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "roomName": {
-                    "type": "string"
-                },
-                "schedules": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/entities.Schedule"
-                    }
-                }
-            }
-        },
-        "entities.Schedule": {
-            "type": "object",
-            "properties": {
-                "endTime": {
-                    "type": "string"
-                },
-                "startTime": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "entities.ScheduleResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/entities.RoomScheduleInfo"
-                    }
-                },
-                "message": {
-                    "type": "string"
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "pageSize": {
-                    "type": "integer"
-                },
-                "totalData": {
-                    "type": "integer"
-                },
-                "totalPage": {
-                    "type": "integer"
-                }
-            }
-        },
-        "entities.Snack": {
-            "type": "object",
-            "properties": {
-                "category": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "price": {
-                    "type": "number"
-                },
-                "unit": {
                     "type": "string"
                 }
             }
