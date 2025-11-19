@@ -1,4 +1,4 @@
-# 📌 E-Meeting API
+# 📌 E-Hotel API
 
 Backend API untuk sistem pemesanan ruang meeting menggunakan **Golang (Echo Framework)**, **PostgreSQL**, dan **JWT Authentication**.
 Mendukung reservasi ruangan, snack, manajemen user, upload gambar, serta Swagger Documentation.
