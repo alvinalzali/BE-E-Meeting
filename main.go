@@ -45,8 +45,8 @@ type SimpleMessageResponse struct {
 var BaseURL string = "http://localhost:8080"
 var db *sql.DB
 var JwtSecret []byte
-var DefaultAvatarURL string = BaseURL + "/assets/default/img/default_profile.jpg"
-var DefaultRoomURL string = BaseURL + "/assets/default/img/default_room.jpg"
+var DefaultAvatarURL string = BaseURL + "/assets/default/default_profile.jpg"
+var DefaultRoomURL string = BaseURL + "/assets/default/default_room.jpg"
 
 // @title E-Meeting API
 // @version 1.0
@@ -359,7 +359,7 @@ func RegisterUser(c echo.Context) error {
 	hashedPassword, err := hashPassword(newUser.Password)
 	if err != nil {
 		// error 500
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Password Hashing Failed"
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error cek"}) //"Password Hashing Failed"
 	}
 
 	//insert variable default, Enum status, role, lang
@@ -369,10 +369,10 @@ func RegisterUser(c echo.Context) error {
 	avatar := DefaultAvatarURL
 
 	// insert to db
-	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status) VALUES ($1, $2, $3, $4, $5, $6)`
+	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status, avatar_url) VALUES ($1, $2, $3, $4, $5, $6)`
 	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status, avatar)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Database Error"
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error database"}) //"Database Error"
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{"message": "User registered successfully"})
