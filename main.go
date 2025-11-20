@@ -107,9 +107,9 @@ func main() {
 
 	// route for rooms
 	e.POST("/rooms", CreateRoom, roleAuthMiddleware("admin"))
-	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin"))
-	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin"))
-	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin"))
+	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin", "user"))
+	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin", "user"))
+	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin", "user"))
 	e.PUT("/rooms/:id", UpdateRoom, roleAuthMiddleware("admin"))
 	e.DELETE("/rooms/:id", DeleteRoom, roleAuthMiddleware("admin"))
 
@@ -129,7 +129,7 @@ func main() {
 
 	// route users
 	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user"))
-	e.PUT("/users/:id", UpdateUserByID)
+	e.PUT("/users/:id", UpdateUserByID, roleAuthMiddleware("admin", "user"))
 
 	e.Logger.Fatal(e.Start(":8080"))
 
