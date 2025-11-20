@@ -62,19 +62,31 @@ Mendukung reservasi ruangan, snack, manajemen user, upload gambar, serta Swagger
 ## 📂 Project Structure
 
 ```
-├── main.go
+├── app/
+│   └── entities/
+├── assets/
+│   ├── default/
+│   └── image/users/
+├── database/
+│   ├── data.sql
+│   └── table.sql
+├── docs/
+│   ├── docs.go
+│   ├── swagger.json
+│   └── swagger.yaml
 ├── migrations/
 │   ├── 1_users.up.sql
 │   ├── 1_users.down.sql
 │   └── ...
-├── app/
-│   └── entities/
-├── assets/
-│   ├── temp/
-│   ├── rooms/
-│   └── default/
 ├── .env
-└── go.mod
+├── .env.example
+├── docker-compose.yml
+├── Dockerfile
+├── go.mod
+├── go.sum
+├── LICENSE
+├── main.go
+└── ReadMe.md
 ```
 
 ---
@@ -88,7 +100,6 @@ db_user=postgres
 db_password=yourpassword
 db_name=e_meeting_db
 
-jwt_secret=yourJWTsecret
 secret_key=yourJWTsecret
 ```
 
