@@ -31,7 +31,7 @@ app :
    - db_user=e_meeting
    - db_password=
    - db_name=e_meeting
-   - secret_key=skbe5secretkey
+   - secret_key=kucinguia
    - SKIP_MIGRATION=true
   ports :
    - "8082:8000"
