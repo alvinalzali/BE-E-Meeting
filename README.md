@@ -100,7 +100,6 @@ db_user=postgres
 db_password=yourpassword
 db_name=e_meeting_db
 
-jwt_secret=yourJWTsecret
 secret_key=yourJWTsecret
 ```
 
