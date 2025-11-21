@@ -1,51 +1,59 @@
 services:
- migrate:
-  build:
-    context: .
-    dockerfile: Dockerfile
-  container_name: skbe5-e-meeting-migrate_kelompok-1
-  entrypoint: ["migrate", "-path", "migrations", "-database", "postgres://e_meeting:@db:5432/e_meeting?sslmode=disable", "up"]
-  depends_on:
-   - db
-  networks:
-   - skbe5-app-network-kelompok-1
-  restart: "no" #run sekali
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skbe5-e-meeting-migrate_kelompok-1
+    entrypoint:
+      [
+        "migrate",
+        "-path",
+        "migrations",
+        "-database",
+        "postgres://e_meeting:@db:5432/e_meeting?sslmode=disable",
+        "up",
+      ]
+    depends_on:
+      - db
+    networks:
+      - skbe5-app-network-kelompok-1
+    restart: "no" # hanya jalan sekali
 
-app :
-  build:
-   context: .
-   dockerfile: Dockerfile
-  container_name: e-meeting-api-kelompok-1
-  depends_on:
-   - db
-  environtment:
-   - db_host=db
-   - db_port=5432
-   - db_user=e_meeting
-   - db_password=
-   - db_name=e_meeting
-   - secret_key=kucinguia
-   - SKIP_MIGRATION=true
-  ports :
-   - "8082:8000"
-  networks:
-   - skbe5-app-network-kelompok-1
-  restart: unless-stopped
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: e-meeting-api-kelompok-1
+    depends_on:
+      - db
+    environment:
+      - db_host=db
+      - db_port=5432
+      - db_user=e_meeting
+      - db_name=e_meeting
+      - db_password=
+      - secret_key=kucinguia
+      - SKIP_MIGRATION=true
+    ports:
+      - "8082:8080"
+    networks:
+      - skbe5-app-network-kelompok-1
+    restart: unless-stopped
 
-db :
-  image: postgres:15-alpine
-  container_name: skbe5_postgres_db_kelompok-1
-  environment:
-   - POSTGRES_USER=e_meeting
-   - POSTGRES_DB=e_meeting
-   - POSTGRES_HOST_AUTH_METHOD=trust
-  volumes:
-   - pgdata:/var/lib/postgresql/data
-  ports:
-   - "5436:5432"
-  networks:
-   - skbe5-app-network-kelompok-1
-  restart: unless-stopped
+  db:
+    image: postgres:15-alpine
+    container_name: skbe5_postgres_db_kelompok_1
+    environment:
+      - POSTGRES_USER=e_meeting
+      - POSTGRES_DB=e_meeting
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+    networks:
+      - skbe5-app-network-kelompok-1
+    restart: unless-stopped
 
 volumes:
   pgdata:
