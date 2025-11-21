@@ -124,7 +124,7 @@ func main() {
 	e.GET("/reservation/calculation", CalculateReservation, roleAuthMiddleware("admin", "user"))
 	e.POST("/reservation", CreateReservation, roleAuthMiddleware("admin", "user"))
 	e.GET("/reservation/history", GetReservationHistory, roleAuthMiddleware("user"))
-	e.PATCH("/reservation/status", UpdateReservationStatus, roleAuthMiddleware("admin", "user"))
+	e.PUT("/reservation/status", UpdateReservationStatus, roleAuthMiddleware("admin", "user"))
 	e.GET("/reservation/:id", GetReservationByID, roleAuthMiddleware("admin", "user"))
 	e.GET("/reservations/schedules", GetReservationSchedules, roleAuthMiddleware("admin"))
 
@@ -1949,7 +1949,7 @@ func GetReservationByID(c echo.Context) error {
 // @Failure 404 {object} map[string]string "message: url not found"
 // @Failure 500 {object} map[string]string "message: internal server error"
 // @Security BearerAuth
-// @Router /reservation/status [patch]
+// @Router /reservation/status [put]
 func UpdateReservationStatus(c echo.Context) error {
 	var req entities.UpdateReservationRequest
 	if err := c.Bind(&req); err != nil {
