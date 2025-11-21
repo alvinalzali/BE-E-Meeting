@@ -4,19 +4,12 @@ services:
     context: .
     dockerfile: Dockerfile
   container_name: skbe5-e-meeting-migrate_kelompok-1
-  entrypoint:
-  [
-    "migrate",
-    "-path", "migrations",
-    "-database", "postgres://postgres:postgres@db:5432/e-meeting?sslmode=disable",
-    "up"
-  ]
+  entrypoint: ["migrate", "-path", "migrations", "-database", "postgres://e_meeting:@db:5432/e_meeting?sslmode=disable", "up"]
   depends_on:
    - db
   networks:
    - skbe5-app-network-kelompok-1
-  restart: 
-   "no" #run sekali
+  restart: "no" #run sekali
 
 app :
   build:
