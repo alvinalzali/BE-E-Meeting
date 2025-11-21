@@ -42,7 +42,7 @@ type SimpleMessageResponse struct {
 	Message string `json:"message"`
 }
 
-var BaseURL string = "http://localhost:8080"
+var BaseURL string = "http://http://172.16.148.101:8082"
 var db *sql.DB
 var JwtSecret []byte
 var DefaultAvatarURL string = BaseURL + "/assets/default/default_profile.jpg"
@@ -59,10 +59,10 @@ var DefaultRoomURL string = BaseURL + "/assets/default/default_room.jpg"
 // @description                 Type "Bearer" followed by a space and JWT token.
 
 func main() {
+	// Load .env file if it exists (optional for Docker environments)
 	err := godotenv.Load()
 	if err != nil {
-		fmt.Println("Error loading .env file")
-		return
+		fmt.Println("Warning: .env file not found, using environment variables from system")
 	}
 
 	dbHost := os.Getenv("db_host")
