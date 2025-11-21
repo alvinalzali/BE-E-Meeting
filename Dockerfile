@@ -4,7 +4,7 @@ FROM golang:1.25.0-alpine AS builder
 WORKDIR /app
 
 # install curl untuk download migrate CLI dan git ( untuk clone repo )
-RUN apk add --no-chache curl git
+RUN apk add --no-cache curl git
 
 # install swag cli
 RUN go install github.com/swaggo/swag/cmd/swag@v1.8.7
