@@ -13,14 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"BE-E-MEETING/app/entities"
 	_ "BE-E-MEETING/docs"
 
 	"github.com/go-playground/validator/v10"
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/joho/godotenv"
@@ -38,15 +34,297 @@ func (cv *CustomValdator) Validate(i interface{}) error {
 	return cv.validator.Struct(i)
 }
 
+type Login struct {
+	//login using username or email
+	Username string `json:"username" validate:"required"`
+	Password string `json:"password" validate:"required"`
+}
+
+type User struct {
+	Username string `json:"username" validate:"required"`
+	Email    string `json:"email" validate:"required,email"`
+	// password harus ada angka, huruf besar, huruf kecil, dan simbol
+	Password string `json:"password" validate:"required"`
+	Name     string `json:"name" validate:"required"`
+}
+
+type getUser struct {
+	Created_at string `json:"createdAt"`
+	Email      string `json:"email"`
+	Id         string `json:"id"`
+	Avatar_url string `json:"imageURL"`
+	Lang       string `json:"language"`
+	Role       string `json:"role"`
+	Status     string `json:"status"`
+	Updated_at string `json:"updatedAt"`
+	Username   string `json:"username"`
+	Name       string `json:"name"`
+}
+
+type updateUser struct {
+	Email      string `json:"email" validate:"omitempty,email"`
+	Avatar_url string `json:"imageURL" validate:"omitempty,url"`
+	Lang       string `json:"language" validate:"omitempty,oneof=en id"`
+	Role       string `json:"role" validate:"omitempty,oneof=admin user"`
+	Status     string `json:"status" validate:"omitempty,oneof=active inactive"`
+	Username   string `json:"username" validate:"omitempty"`
+	Name       string `json:"name" validate:"omitempty"`
+	Updated_at string `json:"updatedAt"`
+}
+
+type Claims struct {
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+type ResetRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+type PasswordConfirmReset struct {
+	ConfirmPassword string `json:"confirm_password" validate:"required"`
+	NewPassword     string `json:"new_password" validate:"required"`
+}
+
+// Request body untuk endpoint rooms
+type RoomRequest struct {
+	Name         string  `json:"name"`
+	Type         string  `json:"type"`
+	Capacity     int     `json:"capacity"`
+	PricePerHour float64 `json:"pricePerHour"`
+	ImageURL     string  `json:"imageURL"`
+}
+
+// Response struct untuk rooms
+type Room struct {
+	ID           int       `json:"id"`
+	Name         string    `json:"name"`
+	RoomType     string    `json:"type"`
+	Capacity     int       `json:"capacity"`
+	PricePerHour float64   `json:"pricePerHour"`
+	PictureURL   string    `json:"imageURL"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// Response struct untuk snacks
+type Snack struct {
+	ID       int     `json:"id"`
+	Name     string  `json:"name"`
+	Unit     string  `json:"unit"`
+	Price    float64 `json:"price"`
+	Category string  `json:"category"`
+}
+
+// struct response CalculateReservation
+// Room detail dalam response perhitungan reservasi
+type RoomCalculationDetail struct {
+	Name          string    `json:"name"`
+	PricePerHour  float64   `json:"pricePerHour"`
+	ImageURL      string    `json:"imageURL"`
+	Capacity      int       `json:"capacity"`
+	Type          string    `json:"type"`
+	SubTotalSnack float64   `json:"subTotalSnack"`
+	SubTotalRoom  float64   `json:"subTotalRoom"`
+	StartTime     time.Time `json:"startTime"`
+	EndTime       time.Time `json:"endTime"`
+	Duration      int       `json:"duration"`
+	Participant   int       `json:"participant"`
+	Snack         Snack     `json:"snack"`
+}
+
+// Data personal yang disertakan pada reservasi
+type PersonalData struct {
+	Name        string `json:"name"`
+	PhoneNumber string `json:"phoneNumber"`
+	Company     string `json:"company"`
+}
+
+type CalculateReservationResponse struct {
+	Message string                   `json:"message"`
+	Data    CalculateReservationData `json:"data"`
+}
+
+type CalculateReservationData struct {
+	Rooms         []RoomCalculationDetail `json:"rooms"`
+	PersonalData  PersonalData            `json:"personalData"`
+	SubTotalRoom  float64                 `json:"subTotalRoom"`
+	SubTotalSnack float64                 `json:"subTotalSnack"`
+	Total         float64                 `json:"total"`
+}
+
+type RoomReservationRequest struct {
+	ID          int       `json:"roomID"` // agar lebih eksplisit
+	StartTime   time.Time `json:"startTime"`
+	EndTime     time.Time `json:"endTime"`
+	Participant int       `json:"participant"` // peserta per ruangan
+	SnackID     int       `json:"snackID"`
+	AddSnack    bool      `json:"addSnack"` // kalau ruangan ini pakai snack atau tidak
+}
+
+type ReservationRequestBody struct {
+	UserID            int                      `json:"userID"`
+	Name              string                   `json:"name"`
+	PhoneNumber       string                   `json:"phoneNumber"`
+	Company           string                   `json:"company"`
+	Notes             string                   `json:"notes"`
+	TotalParticipants int                      `json:"totalParticipants"` // total keseluruhan peserta
+	AddSnack          bool                     `json:"addSnack"`          // apakah reservasi ini melibatkan snack
+	Rooms             []RoomReservationRequest `json:"rooms"`
+}
+
+// Response struct history
+type HistoryResponse struct {
+	Message string               `json:"message"`
+	Data    []ReservationHistory `json:"data"`
+}
+
+// Data struct h
+type ReservationHistory struct {
+	ID            int     `json:"id"`
+	Name          string  `json:"name"`
+	PhoneNumber   float64 `json:"phoneNumber"`
+	Company       string  `json:"company"`
+	SubTotalSnack float64 `json:"subTotalSnack"`
+	SubTotalRoom  float64 `json:"subTotalRoom"`
+	GrandTotal    float64 `json:"grandTotal"`
+	Type          string  `json:"type"`
+	Status        string  `json:"status"`
+	CreatedAt     string  `json:"createdAt"`
+}
+
+// Struct Reservation History :
+// Untuk respons utama
+type ReservationHistoryResponse struct {
+	Message   string                   `json:"message"`
+	Data      []ReservationHistoryData `json:"data"`
+	Page      int                      `json:"page"`
+	PageSize  int                      `json:"pageSize"`
+	TotalPage int                      `json:"totalPage"`
+	TotalData int                      `json:"totalData"`
+}
+
+// Data utama per reservation
+type ReservationHistoryData struct {
+	ID            int                            `json:"id"`
+	Name          string                         `json:"name"`
+	PhoneNumber   string                         `json:"phoneNumber"`
+	Company       string                         `json:"company"`
+	SubTotalSnack float64                        `json:"subTotalSnack"`
+	SubTotalRoom  float64                        `json:"subTotalRoom"`
+	Total         float64                        `json:"total"`
+	Status        string                         `json:"status"`
+	CreatedAt     time.Time                      `json:"createdAt"`
+	UpdatedAt     sql.NullTime                   `json:"updatedAt"`
+	Rooms         []ReservationHistoryRoomDetail `json:"rooms"`
+}
+
+// Detail room di dalam reservation
+type ReservationHistoryRoomDetail struct {
+	ID         int     `json:"id"`
+	Price      float64 `json:"price"`
+	Name       string  `json:"name"`
+	Type       string  `json:"type"`
+	TotalRoom  float64 `json:"totalRoom"`
+	TotalSnack float64 `json:"totalSnack"`
+}
+
+type UpdateReservationRequest struct {
+	ReservationID int    `json:"reservation_id" validate:"required"`
+	Status        string `json:"status" validate:"required,oneof=booked cancel paid"`
+}
+
 type SimpleMessageResponse struct {
 	Message string `json:"message"`
+}
+
+// route GET /reservations/schedules
+type Schedule struct {
+	StartTime string `json:"startTime"`
+	EndTime   string `json:"endTime"`
+	Status    string `json:"status"`
+}
+
+type RoomScheduleInfo struct {
+	ID          string     `json:"id"`
+	RoomName    string     `json:"roomName"`
+	CompanyName string     `json:"companyName"`
+	Schedules   []Schedule `json:"schedules"`
+}
+
+type ScheduleResponse struct {
+	Message   string             `json:"message"`
+	Data      []RoomScheduleInfo `json:"data"`
+	Page      int                `json:"page"`
+	PageSize  int                `json:"pageSize"`
+	TotalPage int                `json:"totalPage"`
+	TotalData int                `json:"totalData"`
+}
+
+type RoomInfo struct {
+	Name         string  `json:"name"`
+	PricePerHour float64 `json:"pricePerHour"`
+	ImageURL     string  `json:"imageURL"`
+	Capacity     int     `json:"capacity"`
+	Type         string  `json:"type"`
+	TotalSnack   float64 `json:"totalSnack"`
+	TotalRoom    float64 `json:"totalRoom"`
+	StartTime    string  `json:"startTime"`
+	EndTime      string  `json:"endTime"`
+	Duration     int     `json:"duration"`
+	Participant  int     `json:"participant"`
+	Snack        *Snack  `json:"snack,omitempty"`
+}
+
+// route GET /dashboard
+type DashboardRoom struct {
+	ID                int     `json:"id"`
+	Name              string  `json:"name"`
+	Omzet             float64 `json:"omzet"`
+	PercentageOfUsage float64 `json:"percentageOfUsage"`
+}
+
+type DashboardResponse struct {
+	Message string `json:"message"`
+	Data    struct {
+		TotalRoom        int             `json:"totalRoom"`
+		TotalVisitor     int             `json:"totalVisitor"`
+		TotalReservation int             `json:"totalReservation"`
+		TotalOmzet       float64         `json:"totalOmzet"`
+		Rooms            []DashboardRoom `json:"rooms"`
+	} `json:"data"`
+}
+
+// route GET /rooms/:id/reservation
+type RoomSchedule struct {
+	ID               int       `json:"id"`
+	StartTime        time.Time `json:"startTime"`
+	EndTime          time.Time `json:"endTime"`
+	Status           string    `json:"status"`
+	TotalParticipant int       `json:"totalParticipant"`
+}
+
+// Add this response types
+type ReservationByIDData struct {
+	Rooms         []RoomInfo   `json:"rooms"`
+	PersonalData  PersonalData `json:"personalData"`
+	SubTotalSnack float64      `json:"subTotalSnack"`
+	SubTotalRoom  float64      `json:"subTotalRoom"`
+	Total         float64      `json:"total"`
+	Status        string       `json:"status"`
+}
+
+type ReservationByIDResponse struct {
+	Message string              `json:"message"`
+	Data    ReservationByIDData `json:"data"`
 }
 
 var BaseURL string = "http://localhost:8080"
 var db *sql.DB
 var JwtSecret []byte
-var DefaultAvatarURL string = BaseURL + "/assets/default/default_profile.jpg"
-var DefaultRoomURL string = BaseURL + "/assets/default/default_room.jpg"
+var DefaultAvatarURL string = BaseURL + "/assets/default/img/default_profile.jpg"
+var DefaultRoomURL string = BaseURL + "/assets/default/img/default_room.jpg"
 
 // @title E-Meeting API
 // @version 1.0
@@ -71,20 +349,7 @@ func main() {
 	dbPassword := os.Getenv("db_password")
 	dbName := os.Getenv("db_name")
 
-	db = ConnectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
-
-	//berikan inputan switch 1 untuk migrate up lalu kembali ke menu, 2 untuk migrate down, 3 untuk continue
-	fmt.Println("Enter 1 for migrate up, 2 for migrate down, 3 for continue:")
-	var input int
-	fmt.Scanln(&input)
-	switch input {
-	case 1:
-		migrateUp(db)
-	case 2:
-		migrateDown(db)
-	}
-
-	JwtSecret = []byte(os.Getenv("jwt_secret"))
+	db = connectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
 
 	e := echo.New()
 
@@ -103,79 +368,43 @@ func main() {
 	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
 
 	// harus pake auth
-	e.POST("/uploads", UploadImage, roleAuthMiddleware("admin", "user"))
+	authGroup := e.Group("/")
+	authGroup.Use(middlewareAuth)
+	authGroup.POST("uploads", UploadImage)
 
 	// route for rooms
-	e.POST("/rooms", CreateRoom, roleAuthMiddleware("admin"))
-	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin", "user"))
-	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin", "user"))
-	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin", "user"))
-	e.PUT("/rooms/:id", UpdateRoom, roleAuthMiddleware("admin"))
-	e.DELETE("/rooms/:id", DeleteRoom, roleAuthMiddleware("admin"))
-
-	// route for snacks
-	e.GET("/snacks", GetSnacks, roleAuthMiddleware("admin", "user"))
+	authGroup.POST("rooms", CreateRoom)
+	authGroup.GET("rooms", GetRooms)
+	authGroup.GET("rooms/:id", GetRoomByID)
+	authGroup.GET("rooms/:id/reservation", GetRoomReservationSchedule)
+	authGroup.PUT("rooms/:id", UpdateRoom)
+	authGroup.DELETE("rooms/:id", DeleteRoom)
+	authGroup.GET("snacks", GetSnacks)
 
 	// route for reservations
-	e.GET("/reservation/calculation", CalculateReservation, roleAuthMiddleware("admin", "user"))
-	e.POST("/reservation", CreateReservation, roleAuthMiddleware("admin", "user"))
-	e.GET("/reservation/history", GetReservationHistory, roleAuthMiddleware("user"))
-	e.PATCH("/reservation/status", UpdateReservationStatus, roleAuthMiddleware("admin", "user"))
-	e.GET("/reservation/:id", GetReservationByID, roleAuthMiddleware("admin", "user"))
-	e.GET("/reservations/schedules", GetReservationSchedules, roleAuthMiddleware("admin"))
+	authGroup.GET("reservation/calculation", CalculateReservation)
+	authGroup.POST("reservation", CreateReservation)
+	authGroup.GET("reservation/history", GetReservationHistory)
+	authGroup.POST("reservation/status", UpdateReservationStatus)
+	authGroup.GET("reservation/:id", GetReservationByID)
+	authGroup.GET("reservations/schedules", GetReservationSchedules)
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
-	e.GET("/dashboard", GetDashboard, roleAuthMiddleware("admin"))
+	authGroup.GET("dashboard", GetDashboard)
+
+	// route group users
+	userGroup := e.Group("/users")
+	userGroup.Use(middlewareAuth)
 
 	// route users
-	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user"))
-	e.PUT("/users/:id", UpdateUserByID, roleAuthMiddleware("admin", "user"))
+	userGroup.GET("/:id", GetUserByID)
+	userGroup.PUT("/:id", UpdateUserByID)
 
 	e.Logger.Fatal(e.Start(":8080"))
 
 }
 
-func migrateUp(db *sql.DB) {
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"postgres", driver)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = m.Up()
-	if err != nil && err != migrate.ErrNoChange {
-		log.Fatal(err)
-	}
-
-	fmt.Println("Migrate up successfully")
-}
-
-func migrateDown(db *sql.DB) {
-	//cek kalau database dirty
-
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"postgres", driver)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = m.Down()
-	if err != nil && err != migrate.ErrNoChange {
-		log.Fatal(err)
-	}
-
-	fmt.Println("Migrate down successfully")
-}
-
-func ConnectDB(username, password, dbname, host string, port int) *sql.DB {
+func connectDB(username, password, dbname, host string, port int) *sql.DB {
 	// connect to db
 	connSt := "host=" + host + " port=" + strconv.Itoa(port) + " user=" + username + " password=" + password + " dbname=" + dbname + " sslmode=disable"
 	db, err := sql.Open("postgres", connSt)
@@ -190,20 +419,8 @@ func ConnectDB(username, password, dbname, host string, port int) *sql.DB {
 	return db
 }
 
-// login godoc
-// @Summary Login user
-// @Description Login user
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param loginData body entities.Login true "Login data"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 401 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /login [post]
 func login(c echo.Context) error {
-	var loginData entities.Login
+	var loginData Login
 
 	if err := c.Bind(&loginData); err != nil {
 		//error code 400
@@ -287,7 +504,7 @@ func isEmail(input string) bool {
 
 func generateAccessToken(username string, role string) (string, error) {
 	JwtSecret = []byte(os.Getenv("secret_key"))
-	claims := &entities.Claims{
+	claims := &Claims{
 		Username: username,
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -301,7 +518,7 @@ func generateAccessToken(username string, role string) (string, error) {
 
 func generateRefreshToken(username string, role string) (string, error) {
 	JwtSecret = []byte(os.Getenv("secret_key"))
-	claims := &entities.Claims{
+	claims := &Claims{
 		Username: username,
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -315,7 +532,7 @@ func generateRefreshToken(username string, role string) (string, error) {
 
 func generateResetToken(email string) (string, error) {
 	JwtSecret = []byte(os.Getenv("secret_key"))
-	claims := &entities.Claims{
+	claims := &Claims{
 		Username: email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Minute)),
@@ -329,16 +546,16 @@ func generateResetToken(email string) (string, error) {
 // RegisterUser godoc
 // @Summary Register a new user
 // @Description Register a new user
-// @Tags Auth
+// @Tags User
 // @Accept json
 // @Produce json
-// @Param user body entities.User true "User object"
-// @Success 200 {object} map[string]interface{}
+// @Param user body User true "User object to be registered"
+// @Success 201 {object} User
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /register [post]
 func RegisterUser(c echo.Context) error {
-	var newUser entities.User
+	var newUser User
 
 	if err := c.Bind(&newUser); err != nil {
 		//error code 400
@@ -359,20 +576,17 @@ func RegisterUser(c echo.Context) error {
 	hashedPassword, err := hashPassword(newUser.Password)
 	if err != nil {
 		// error 500
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error cek"}) //"Password Hashing Failed"
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Password Hashing Failed"
 	}
 
 	//insert variable default, Enum status, role, lang
 	status := "active"
 
-	//var default avatar
-	avatar := DefaultAvatarURL
-
 	// insert to db
-	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status, avatar_url) VALUES ($1, $2, $3, $4, $5, $6)`
-	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status, avatar)
+	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status) VALUES ($1, $2, $3, $4, $5)`
+	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error database"}) //"Database Error"
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"}) //"Database Error"
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{"message": "User registered successfully"})
@@ -401,21 +615,21 @@ func hashPassword(password string) (string, error) {
 	return string(bytes), err
 }
 
-// PasswordResetId godoc
+// PasswordResetId god oc
 // @Summary Reset user password
 // @Description Reset user password using a valid reset token
 // @Tags User
 // @Accept json
 // @Produce json
 // @Param id path string true "Reset Token"
-// @Param user body entities.PasswordConfirmReset true "User object"
+// @Param password body PasswordConfirmReset true "New Password and Confirm Password"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /password/reset/{id} [put]
 func PasswordResetId(c echo.Context) error {
 	id := c.Param("id")
-	var passReset entities.PasswordConfirmReset
+	var passReset PasswordConfirmReset
 
 	//cek apakah id ini valid JWT
 	token, err := jwt.Parse(id, func(token *jwt.Token) (interface{}, error) {
@@ -470,13 +684,13 @@ func PasswordResetId(c echo.Context) error {
 // @Tags User
 // @Accept json
 // @Produce json
-// @Param user body entities.ResetRequest true "User object"
+// @Param email body ResetRequest true "Email"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /password/reset [post]
 func PasswordReset(c echo.Context) error {
-	var resetReq entities.ResetRequest
+	var resetReq ResetRequest
 
 	if err := c.Bind(&resetReq); err != nil {
 		//error code 400
@@ -512,105 +726,32 @@ func PasswordReset(c echo.Context) error {
 }
 
 // fungsi middleware untuk login dan verif jwt
-func roleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-
-			// Ambil Authorization Header
-			authHeader := c.Request().Header.Get("Authorization")
-			if authHeader == "" {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
-			}
-
-			// parse token jwt
-			token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
-				return JwtSecret, nil
-			})
-
-			if err != nil || !token.Valid {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
-			}
-
-			//ekstrak claims
-			claims, ok := token.Claims.(jwt.MapClaims)
-			if !ok {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
-			}
-
-			fmt.Println("Authenticated user:", claims["username"])
-			fmt.Println("Claims:", claims)
-			fmt.Println("Claims:", claims["role"])
-
-			// Ambil role dari claims
-			var userRoles []string
-
-			// Coba ekstrak sebagai []interface{} (untuk multiple roles)
-			if rolesClaimSlice, ok := claims["role"].([]interface{}); ok {
-				for _, roleInterface := range rolesClaimSlice {
-					if role, ok := roleInterface.(string); ok {
-						userRoles = append(userRoles, role)
-					}
-				}
-			} else if roleClaimString, ok := claims["role"].(string); ok {
-				// Coba ekstrak sebagai string (untuk single role)
-				userRoles = append(userRoles, roleClaimString)
-			} else {
-				// Jika tidak dapat di-parse sebagai slice atau string, print dan kembalikan Unauthorized
-				fmt.Println("Claims[role] tidak dalam format yang diharapkan:", claims["role"])
-				// Cek apakah Anda perlu mengembalikan error di sini jika Anda yakin role HARUS ada
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Role claim missing or invalid format"})
-			}
-
-			// Tambahkan pengecekan jika userRoles kosong setelah ekstraksi
-			if len(userRoles) == 0 {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "No valid roles found in token"})
-			}
-
-			// Cek lagi untuk debug
-			fmt.Println("User Roles yang berhasil diekstrak:", userRoles)
-
-			// cek role sesuai dengan role required
-			for _, requiredRole := range requiredRoles {
-				for _, userRole := range userRoles {
-					if requiredRole == userRole {
-						// lanjurt ke handler kalau cocok
-						return next(c)
-					}
-				}
-			}
-
-			// kalau role ga cocok
+func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		authHeader := c.Request().Header.Get("Authorization")
+		if authHeader == "" {
 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
 		}
+		token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
+			return JwtSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
+		}
+
+		//ekstrak claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
+		}
+
+		fmt.Println("Authenticated user:", claims["username"])
+
+		//lanjut ke handler
+		return next(c)
 	}
 }
-
-// func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
-// 	return func(c echo.Context) error {
-// 		authHeader := c.Request().Header.Get("Authorization")
-// 		if authHeader == "" {
-// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
-// 		}
-// 		token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
-// 			return JwtSecret, nil
-// 		})
-
-// 		if err != nil || !token.Valid {
-// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
-// 		}
-
-// 		//ekstrak claims
-// 		claims, ok := token.Claims.(jwt.MapClaims)
-// 		if !ok {
-// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
-// 		}
-
-// 		fmt.Println("Authenticated user:", claims["username"])
-
-// 		//lanjut ke handler
-// 		return next(c)
-// 	}
-// }
 
 // GetUserByID godoc
 // @Summary Get user by ID
@@ -633,7 +774,7 @@ func GetUserByID(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
 	}
 
-	var user entities.GetUser
+	var user getUser
 	sqlStatement := `SELECT id, username, email, name, avatar_url, lang, role, status, created_at, updated_at FROM users WHERE id=$1`
 	err = db.QueryRow(sqlStatement, idInt).Scan(
 		&user.Id, &user.Username, &user.Email, &user.Name,
@@ -648,6 +789,7 @@ func GetUserByID(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error", "detail": err.Error()})
 	}
 
+	//jika user.Avatar_url kosong, ganti ke default
 	if user.Avatar_url == "" {
 		user.Avatar_url = DefaultAvatarURL
 	}
@@ -666,7 +808,7 @@ func GetUserByID(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param id path string true "User ID"
-// @Param user body entities.UpdateUser true "User object"
+// @Param user body main.updateUser true "User object to be updated"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -680,7 +822,7 @@ func UpdateUserByID(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
 	}
 
-	var user entities.UpdateUser
+	var user updateUser
 	if err := c.Bind(&user); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request body"})
 	}
@@ -688,7 +830,7 @@ func UpdateUserByID(c echo.Context) error {
 	user.Updated_at = time.Now().Format(time.RFC3339)
 
 	// --- Ambil data user saat ini ---
-	var currentUser entities.UpdateUser
+	var currentUser updateUser
 	query := `SELECT username, email, avatar_url FROM users WHERE id=$1`
 	err = db.QueryRow(query, idInt).Scan(&currentUser.Username, &currentUser.Email, &currentUser.Avatar_url)
 	if err != nil {
@@ -804,7 +946,6 @@ func UpdateUserByID(c echo.Context) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /save-image [post]
 func UploadImage(c echo.Context) error {
 	file, err := c.FormFile("image")
@@ -867,14 +1008,12 @@ func UploadImage(c echo.Context) error {
 // @Param capacity formData int true "Room capacity"
 // @Param pricePerHour formData number true "Price per hour"
 // @Param image formData file true "Room image (JPG/PNG ≤1MB)"
-
 // @Success 201 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /rooms [post]
 func CreateRoom(c echo.Context) error {
-	var req entities.RoomRequest
+	var req RoomRequest
 
 	// Bind JSON body
 	if err := c.Bind(&req); err != nil {
@@ -1024,7 +1163,6 @@ func CreateRoom(c echo.Context) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /rooms [get]
 func GetRooms(c echo.Context) error {
 	name := c.QueryParam("name")
@@ -1092,9 +1230,9 @@ func GetRooms(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	var rooms []entities.Room
+	var rooms []Room
 	for rows.Next() {
-		var r entities.Room
+		var r Room
 		var createdAt sql.NullTime
 		var updatedAt sql.NullTime
 		if err := rows.Scan(&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour, &r.PictureURL, &createdAt, &updatedAt); err != nil {
@@ -1136,7 +1274,6 @@ func GetRooms(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /rooms/{id} [get]
 func GetRoomByID(c echo.Context) error {
 	idParam := c.Param("id")
@@ -1149,7 +1286,7 @@ func GetRoomByID(c echo.Context) error {
         SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
         FROM rooms WHERE id = $1
     `
-	var r entities.Room
+	var r Room
 	var createdAt sql.NullTime
 	var updatedAt sql.NullTime
 	err = db.QueryRow(query, id).Scan(
@@ -1188,12 +1325,11 @@ func GetRoomByID(c echo.Context) error {
 // @Accept json
 // @Produce json
 // @Param id path string true "Room ID"
-// @Param room body entities.RoomRequest true "Room details"
+// @Param room body main.RoomRequest true "Room details"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /rooms/{id} [put]
 func UpdateRoom(c echo.Context) error {
 	idParam := c.Param("id")
@@ -1202,7 +1338,7 @@ func UpdateRoom(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
 	}
 
-	var req entities.RoomRequest
+	var req RoomRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
@@ -1243,7 +1379,6 @@ func UpdateRoom(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /rooms/{id} [delete]
 func DeleteRoom(c echo.Context) error {
 	idParam := c.Param("id")
@@ -1275,7 +1410,6 @@ func DeleteRoom(c echo.Context) error {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /snacks [get]
 func GetSnacks(c echo.Context) error {
 	rows, err := db.Query(`SELECT id, name, unit, price, category FROM snacks ORDER BY id ASC`)
@@ -1285,9 +1419,9 @@ func GetSnacks(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	var snacks []entities.Snack
+	var snacks []Snack
 	for rows.Next() {
-		var s entities.Snack
+		var s Snack
 		if err := rows.Scan(&s.ID, &s.Name, &s.Unit, &s.Price, &s.Category); err != nil {
 			log.Println("Scan error:", err)
 			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
@@ -1320,7 +1454,6 @@ func GetSnacks(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /reservation/calculation [get]
 func CalculateReservation(c echo.Context) error {
 	roomID, _ := strconv.Atoi(c.QueryParam("room_id"))
@@ -1350,7 +1483,7 @@ func CalculateReservation(c echo.Context) error {
 	}
 
 	// Ambil data room
-	var room entities.Room
+	var room Room
 	err = db.QueryRow(`
 		SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
 		FROM rooms WHERE id = $1
@@ -1360,7 +1493,7 @@ func CalculateReservation(c echo.Context) error {
 	}
 
 	// Ambil data snack
-	var snack entities.Snack
+	var snack Snack
 	err = db.QueryRow(`
 		SELECT id, name, unit, price, category
 		FROM snacks WHERE id = $1
@@ -1395,7 +1528,7 @@ func CalculateReservation(c echo.Context) error {
 	total := subTotalRoom + subTotalSnack
 
 	// Siapkan response struct
-	roomDetail := entities.RoomCalculationDetail{
+	roomDetail := RoomCalculationDetail{
 		Name:          room.Name,
 		PricePerHour:  room.PricePerHour,
 		ImageURL:      room.PictureURL,
@@ -1407,7 +1540,7 @@ func CalculateReservation(c echo.Context) error {
 		EndTime:       endTime,
 		Duration:      durationMinutes,
 		Participant:   participant,
-		Snack: entities.Snack{
+		Snack: Snack{
 			ID:       snack.ID,
 			Name:     snack.Name,
 			Unit:     snack.Unit,
@@ -1416,11 +1549,11 @@ func CalculateReservation(c echo.Context) error {
 		},
 	}
 
-	response := entities.CalculateReservationResponse{
+	response := CalculateReservationResponse{
 		Message: "success",
-		Data: entities.CalculateReservationData{
-			Rooms:         []entities.RoomCalculationDetail{roomDetail},
-			PersonalData:  entities.PersonalData{Name: name, PhoneNumber: phoneNumber, Company: company},
+		Data: CalculateReservationData{
+			Rooms:         []RoomCalculationDetail{roomDetail},
+			PersonalData:  PersonalData{Name: name, PhoneNumber: phoneNumber, Company: company},
 			SubTotalRoom:  subTotalRoom,
 			SubTotalSnack: subTotalSnack,
 			Total:         total,
@@ -1437,14 +1570,13 @@ func CalculateReservation(c echo.Context) error {
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param request body entities.ReservationRequestBody true "Reservation request body"
+// @Param request body ReservationRequestBody true "Reservation request body"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /reservation [post]
 func CreateReservation(c echo.Context) error {
-	var req entities.ReservationRequestBody
+	var req ReservationRequestBody
 
 	// Bind JSON
 	if err := c.Bind(&req); err != nil {
@@ -1517,7 +1649,7 @@ func CreateReservation(c echo.Context) error {
 
 	// Loop tiap room
 	for _, room := range req.Rooms {
-		var roomTable entities.Room
+		var roomTable Room
 		err = tx.QueryRow(`
 			SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
 			FROM rooms WHERE id = $1
@@ -1535,7 +1667,7 @@ func CreateReservation(c echo.Context) error {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
 		}
 
-		var snackTable entities.Snack
+		var snackTable Snack
 		err = tx.QueryRow(`
 			SELECT id, name, unit, price, category
 			FROM snacks WHERE id = $1
@@ -1619,7 +1751,6 @@ func CreateReservation(c echo.Context) error {
 // @Success 200 {object} map[string]interface{} "History retrieved successfully"
 // @Failure 400 {object} map[string]interface{} "Invalid query parameter"
 // @Failure 500 {object} map[string]interface{} "Failed to retrieve history"
-// @Security BearerAuth
 // @Router /history [get]
 func GetReservationHistory(c echo.Context) error {
 	startDate := c.QueryParam("startDate")
@@ -1700,9 +1831,9 @@ func GetReservationHistory(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	var histories []entities.ReservationHistoryData
+	var histories []ReservationHistoryData
 	for rows.Next() {
-		var h entities.ReservationHistoryData
+		var h ReservationHistoryData
 		err := rows.Scan(
 			&h.ID, &h.Name, &h.PhoneNumber, &h.Company,
 			&h.SubTotalSnack, &h.SubTotalRoom, &h.Total,
@@ -1727,7 +1858,7 @@ func GetReservationHistory(c echo.Context) error {
 		}
 
 		for roomRows.Next() {
-			var r entities.ReservationHistoryRoomDetail
+			var r ReservationHistoryRoomDetail
 			err := roomRows.Scan(
 				&r.ID, &r.Price, &r.Name, &r.Type,
 				&r.TotalRoom, &r.TotalSnack,
@@ -1790,7 +1921,7 @@ func GetReservationHistory(c echo.Context) error {
 	}
 
 	// --- Response sukses ---
-	return c.JSON(http.StatusOK, entities.ReservationHistoryResponse{
+	return c.JSON(http.StatusOK, ReservationHistoryResponse{
 		Message:   "Reservation history fetched successfully",
 		Data:      histories,
 		Page:      page,
@@ -1806,13 +1937,11 @@ func GetReservationHistory(c echo.Context) error {
 // @Tags Reservation
 // @Produce json
 // @Param id path int true "Reservation ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} ReservationByIDResponse
 // @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Failure 404 {object} map[string]string
 // @Failure 401 {object} map[string]string
-// @Failure 403 {object} map[string]string
-// @Security BearerAuth
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
 // @Router /reservation/{id} [get]
 func GetReservationByID(c echo.Context) error {
 	idParam := c.Param("id")
@@ -1872,10 +2001,10 @@ func GetReservationByID(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	rooms := make([]entities.RoomInfo, 0)
+	rooms := make([]RoomInfo, 0)
 	for rows.Next() {
-		var room entities.RoomInfo
-		var snack entities.Snack
+		var room RoomInfo
+		var snack Snack
 		var startAt, endAt sql.NullTime
 		err := rows.Scan(
 			&room.Name, &room.PricePerHour, &room.ImageURL, &room.Capacity, &room.Type,
@@ -1898,11 +2027,11 @@ func GetReservationByID(c echo.Context) error {
 	}
 
 	if len(rooms) == 0 {
-		return c.JSON(http.StatusOK, entities.ReservationByIDResponse{
+		return c.JSON(http.StatusOK, ReservationByIDResponse{
 			Message: "success",
-			Data: entities.ReservationByIDData{
+			Data: ReservationByIDData{
 				Rooms: rooms,
-				PersonalData: entities.PersonalData{
+				PersonalData: PersonalData{
 					Name:        contactName.String,
 					PhoneNumber: contactPhone.String,
 					Company:     contactCompany.String,
@@ -1915,11 +2044,11 @@ func GetReservationByID(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, entities.ReservationByIDResponse{
+	return c.JSON(http.StatusOK, ReservationByIDResponse{
 		Message: "success",
-		Data: entities.ReservationByIDData{
+		Data: ReservationByIDData{
 			Rooms: rooms,
-			PersonalData: entities.PersonalData{
+			PersonalData: PersonalData{
 				Name:        contactName.String,
 				PhoneNumber: contactPhone.String,
 				Company:     contactCompany.String,
@@ -1938,16 +2067,15 @@ func GetReservationByID(c echo.Context) error {
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param reservation body entities.UpdateReservationRequest true "Reservation details"
+// @Param request body UpdateReservationRequest true "Status update request"
 // @Success 200 {object} map[string]string "message: update status success"
 // @Failure 400 {object} map[string]string "message: bad request/reservation already canceled/paid"
 // @Failure 401 {object} map[string]string "message: unauthorized"
 // @Failure 404 {object} map[string]string "message: url not found"
 // @Failure 500 {object} map[string]string "message: internal server error"
-// @Security BearerAuth
-// @Router /reservation/status [patch]
+// @Router /reservation/status [post]
 func UpdateReservationStatus(c echo.Context) error {
-	var req entities.UpdateReservationRequest
+	var req UpdateReservationRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, SimpleMessageResponse{Message: "invalid request format"})
 	}
@@ -1979,7 +2107,7 @@ func UpdateReservationStatus(c echo.Context) error {
 			}
 
 			// parse token with same secret used by generateAccessToken
-			token, err := jwt.ParseWithClaims(tokenStr, &entities.Claims{}, func(t *jwt.Token) (interface{}, error) {
+			token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 				return []byte(os.Getenv("secret_key")), nil
 			})
 			if err != nil {
@@ -1987,7 +2115,7 @@ func UpdateReservationStatus(c echo.Context) error {
 				return c.JSON(http.StatusUnauthorized, echo.Map{"message": "invalid token"})
 			}
 			if token != nil && token.Valid {
-				if claims, ok := token.Claims.(*entities.Claims); ok {
+				if claims, ok := token.Claims.(*Claims); ok {
 					username := claims.Username
 					if username != "" {
 						// get user id from username
@@ -2079,8 +2207,10 @@ func UpdateReservationStatus(c echo.Context) error {
 // @Param endDate query string true "End date (YYYY-MM-DD)"
 // @Param page query int false "Page number (default: 1)"
 // @Param pageSize query int false "Page size (default: 10)"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} ScheduleResponse
 // @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Security BearerAuth
 // @Router /reservations/schedules [get]
@@ -2180,7 +2310,7 @@ func GetReservationSchedules(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	scheduleMap := make(map[string]*entities.RoomScheduleInfo)
+	scheduleMap := make(map[string]*RoomScheduleInfo)
 	for rows.Next() {
 		var (
 			roomID, roomName   string
@@ -2198,15 +2328,15 @@ func GetReservationSchedules(c echo.Context) error {
 		}
 
 		if _, exists := scheduleMap[roomID]; !exists {
-			scheduleMap[roomID] = &entities.RoomScheduleInfo{
+			scheduleMap[roomID] = &RoomScheduleInfo{
 				ID:          roomID,
 				RoomName:    roomName,
 				CompanyName: companyName.String,
-				Schedules:   make([]entities.Schedule, 0),
+				Schedules:   make([]Schedule, 0),
 			}
 		}
 
-		scheduleMap[roomID].Schedules = append(scheduleMap[roomID].Schedules, entities.Schedule{
+		scheduleMap[roomID].Schedules = append(scheduleMap[roomID].Schedules, Schedule{
 			StartTime: startTime.Format(time.RFC3339),
 			EndTime:   endTime.Format(time.RFC3339),
 			Status:    status,
@@ -2214,14 +2344,14 @@ func GetReservationSchedules(c echo.Context) error {
 	}
 
 	// Convert map to slice
-	schedules := make([]entities.RoomScheduleInfo, 0, len(scheduleMap))
+	schedules := make([]RoomScheduleInfo, 0, len(scheduleMap))
 	for _, schedule := range scheduleMap {
 		schedules = append(schedules, *schedule)
 	}
 
 	totalPages := (totalData + pageSize - 1) / pageSize
 
-	response := entities.ScheduleResponse{
+	response := ScheduleResponse{
 		Message:   "success",
 		Data:      schedules,
 		Page:      page,
@@ -2242,7 +2372,7 @@ func GetReservationSchedules(c echo.Context) error {
 // @Produce json
 // @Param startDate query string true "Start date (YYYY-MM-DD)"
 // @Param endDate query string true "End date (YYYY-MM-DD)"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} DashboardResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -2338,9 +2468,9 @@ func GetDashboard(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	var rooms []entities.DashboardRoom
+	var rooms []DashboardRoom
 	for rows.Next() {
-		var room entities.DashboardRoom
+		var room DashboardRoom
 		err := rows.Scan(&room.ID, &room.Name, &room.Omzet, &room.PercentageOfUsage)
 		if err != nil {
 			log.Println("Room stats scan error:", err)
@@ -2349,7 +2479,7 @@ func GetDashboard(c echo.Context) error {
 		rooms = append(rooms, room)
 	}
 
-	response := entities.DashboardResponse{
+	response := DashboardResponse{
 		Message: "get dashboard data success",
 	}
 	response.Data.TotalRoom = totalRoom
@@ -2373,7 +2503,6 @@ func GetDashboard(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Security BearerAuth
 // @Router /rooms/{id}/reservation [get]
 func GetRoomReservationSchedule(c echo.Context) error {
 	// Get room ID from path parameter
@@ -2472,9 +2601,9 @@ func GetRoomReservationSchedule(c echo.Context) error {
 	}
 	defer rows.Close()
 
-	schedules := []entities.RoomSchedule{}
+	schedules := []RoomSchedule{}
 	for rows.Next() {
-		var schedule entities.RoomSchedule
+		var schedule RoomSchedule
 		var startAt sql.NullTime
 		var endAt sql.NullTime
 		var status sql.NullString
@@ -2507,7 +2636,7 @@ func GetRoomReservationSchedule(c echo.Context) error {
 	}
 
 	// Get room details
-	var room entities.Room
+	var room Room
 	var createdAt sql.NullTime
 	var updatedAt sql.NullTime
 	err = db.QueryRow(`
