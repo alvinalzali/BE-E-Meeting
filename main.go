@@ -73,15 +73,19 @@ func main() {
 
 	db = ConnectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
 
-	//berikan inputan switch 1 untuk migrate up lalu kembali ke menu, 2 untuk migrate down, 3 untuk continue
-	fmt.Println("Enter 1 for migrate up, 2 for migrate down, 3 for continue:")
-	var input int
-	fmt.Scanln(&input)
-	switch input {
-	case 1:
-		migrateUp(db)
-	case 2:
-		migrateDown(db)
+	// Skip interactive migration prompt in Docker (use separate migrate service)
+	skipMigration := os.Getenv("SKIP_MIGRATION")
+	if skipMigration != "true" {
+		//berikan inputan switch 1 untuk migrate up lalu kembali ke menu, 2 untuk migrate down, 3 untuk continue
+		fmt.Println("Enter 1 for migrate up, 2 for migrate down, 3 for continue:")
+		var input int
+		fmt.Scanln(&input)
+		switch input {
+		case 1:
+			migrateUp(db)
+		case 2:
+			migrateDown(db)
+		}
 	}
 
 	JwtSecret = []byte(os.Getenv("jwt_secret"))
