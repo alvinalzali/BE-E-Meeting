@@ -558,7 +558,7 @@
             }
         },
         "/reservation/status": {
-            "patch": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []

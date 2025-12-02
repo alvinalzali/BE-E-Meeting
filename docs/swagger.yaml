@@ -564,7 +564,7 @@ paths:
       tags:
       - Reservation
   /reservation/status:
-    patch:
+    put:
       consumes:
       - application/json
       description: Update status of a reservation (booked/canceled/paid)

@@ -42,7 +42,8 @@ type SimpleMessageResponse struct {
 	Message string `json:"message"`
 }
 
-var BaseURL string = "http://http://172.16.148.101:8082"
+// var BaseURL string = "http://172.16.148.101:8082"
+var BaseURL string = "http://localhost:8080/"
 var db *sql.DB
 var JwtSecret []byte
 var DefaultAvatarURL string = BaseURL + "/assets/default/default_profile.jpg"
@@ -101,10 +102,10 @@ func main() {
 	e.Static("/assets", "./assets")
 
 	// route for login, register, password reset
-	e.POST("/login", login)
-	e.POST("/register", RegisterUser)
-	e.POST("password/reset_request", PasswordReset)
-	e.PUT("/password/reset/:id", PasswordResetId) //id ini token reset password yang dikirim via email
+	e.POST("/login", login)                                                            //running
+	e.POST("/register", RegisterUser)                                                  //running
+	e.POST("password/reset_request", PasswordReset)                                    //running
+	e.PUT("/password/reset/:id", PasswordResetId, roleAuthMiddleware("admin", "user")) //id ini token reset password yang dikirim via email
 
 	// harus pake auth
 	e.POST("/uploads", UploadImage, roleAuthMiddleware("admin", "user"))
@@ -406,6 +407,7 @@ func hashPassword(password string) (string, error) {
 }
 
 // PasswordResetId godoc
+// @Security ApiKeyAuth
 // @Summary Reset user password
 // @Description Reset user password using a valid reset token
 // @Tags User
@@ -421,21 +423,38 @@ func PasswordResetId(c echo.Context) error {
 	id := c.Param("id")
 	var passReset entities.PasswordConfirmReset
 
-	//cek apakah id ini valid JWT
-	token, err := jwt.Parse(id, func(token *jwt.Token) (interface{}, error) {
-		return JwtSecret, nil
-	})
+	// validasi input id
+	userID, err := strconv.Atoi(id)
 	if err != nil {
-		//error code 400
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Input"
-	}
-	if !token.Valid {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Token"
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
 	}
 
+	// ambil jwt dari auth header
+	userToken := c.Get("user").(*jwt.Token)
+	claims := userToken.Claims.(jwt.MapClaims)
+
+	// ambil username dari jwt
+	usernameFromToken := claims["username"].(string)
+
+	// ambil username dari db berdasarkan id
+	var usernameFromDB string
+	err = db.QueryRow("SELECT username FROM users WHERE id = $1", userID).Scan(&usernameFromDB)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
+	}
+
+	// bandingkan jwt dan db
+	if usernameFromToken != usernameFromDB {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
+	}
+
+	req := c.Request()
+	fmt.Println("HEADERS:", req.Header)
+
+	// proses password
 	if err := c.Bind(&passReset); err != nil {
 		//error code 400
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Input"
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "CBad Request"}) //"Invalid Input"
 	}
 
 	//validasi apakah new password dan confirm password sama
@@ -444,7 +463,7 @@ func PasswordResetId(c echo.Context) error {
 	}
 	if err := c.Validate(&passReset); err != nil {
 		//error code 400
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Validation Error"
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "DBad Request"}) //"Validation Error"
 	}
 
 	// cek password apakah ada angka, huruf besar, huruf kecil, dan simbol
@@ -526,8 +545,13 @@ func roleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
 				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
 			}
 
-			// parse token jwt
-			token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Authorization header"})
+			}
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+			// parsing jwt
+			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 				return JwtSecret, nil
 			})
 
@@ -535,7 +559,9 @@ func roleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
 				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
 			}
 
-			//ekstrak claims
+			// ✅ SIMPAN TOKEN KE CONTEXT
+			c.Set("user", token)
+
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
 				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})

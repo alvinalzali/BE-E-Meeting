@@ -566,7 +566,7 @@ const docTemplate = `{
             }
         },
         "/reservation/status": {
-            "patch": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
