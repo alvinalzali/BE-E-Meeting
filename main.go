@@ -43,7 +43,7 @@ type SimpleMessageResponse struct {
 }
 
 // var BaseURL string = "http://172.16.148.101:8082"
-var BaseURL string = "http://localhost:8080/"
+var BaseURL string = "http://localhost:8080"
 var db *sql.DB
 var JwtSecret []byte
 var DefaultAvatarURL string = BaseURL + "/assets/default/default_profile.jpg"
@@ -96,7 +96,7 @@ func main() {
 	e.Validator = &CustomValdator{validator: validator.New()}
 
 	// route for swagger
-	e.GET("/swagger/*", echoSwagger.WrapHandler)
+	e.GET("/swagger/*", echoSwagger.WrapHandler) //runnning
 
 	//assets
 	e.Static("/assets", "./assets")
@@ -105,10 +105,10 @@ func main() {
 	e.POST("/login", login)                                                            //running
 	e.POST("/register", RegisterUser)                                                  //running
 	e.POST("password/reset_request", PasswordReset)                                    //running
-	e.PUT("/password/reset/:id", PasswordResetId, roleAuthMiddleware("admin", "user")) //id ini token reset password yang dikirim via email
+	e.PUT("/password/reset/:id", PasswordResetId, roleAuthMiddleware("admin", "user")) //id ini token reset password yang dikirim via email //runnning
 
 	// harus pake auth
-	e.POST("/uploads", UploadImage, roleAuthMiddleware("admin", "user"))
+	e.POST("/uploads", UploadImage, roleAuthMiddleware("admin", "user")) //runnning
 
 	// route for rooms
 	e.POST("/rooms", CreateRoom, roleAuthMiddleware("admin"))
@@ -133,7 +133,7 @@ func main() {
 	e.GET("/dashboard", GetDashboard, roleAuthMiddleware("admin"))
 
 	// route users
-	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user"))
+	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user")) //runnning
 	e.PUT("/users/:id", UpdateUserByID, roleAuthMiddleware("admin", "user"))
 
 	e.Logger.Fatal(e.Start(":8080"))
@@ -615,33 +615,6 @@ func roleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
 	}
 }
 
-// func middlewareAuth(next echo.HandlerFunc) echo.HandlerFunc {
-// 	return func(c echo.Context) error {
-// 		authHeader := c.Request().Header.Get("Authorization")
-// 		if authHeader == "" {
-// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
-// 		}
-// 		token, err := jwt.Parse(authHeader, func(token *jwt.Token) (interface{}, error) {
-// 			return JwtSecret, nil
-// 		})
-
-// 		if err != nil || !token.Valid {
-// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
-// 		}
-
-// 		//ekstrak claims
-// 		claims, ok := token.Claims.(jwt.MapClaims)
-// 		if !ok {
-// 			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
-// 		}
-
-// 		fmt.Println("Authenticated user:", claims["username"])
-
-// 		//lanjut ke handler
-// 		return next(c)
-// 	}
-// }
-
 // GetUserByID godoc
 // @Summary Get user by ID
 // @Description Retrieve user details by user ID
@@ -661,6 +634,25 @@ func GetUserByID(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
+	}
+
+	// ambil jwt dari auth header
+	userToken := c.Get("user").(*jwt.Token)
+	claims := userToken.Claims.(jwt.MapClaims)
+
+	// ambil username dari jwt
+	usernameFromToken := claims["username"].(string)
+
+	// ambil username dari db berdasarkan id
+	var usernameFromDB string
+	err = db.QueryRow("SELECT username FROM users WHERE id = $1", idInt).Scan(&usernameFromDB)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
+	}
+
+	// bandingkan jwt dan db
+	if usernameFromToken != usernameFromDB {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
 	}
 
 	var user entities.GetUser
@@ -708,6 +700,25 @@ func UpdateUserByID(c echo.Context) error {
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
+	}
+
+	// ambil jwt dari auth header
+	userToken := c.Get("user").(*jwt.Token)
+	claims := userToken.Claims.(jwt.MapClaims)
+
+	// ambil username dari jwt
+	usernameFromToken := claims["username"].(string)
+
+	// ambil username dari db berdasarkan id
+	var usernameFromDB string
+	err = db.QueryRow("SELECT username FROM users WHERE id = $1", idInt).Scan(&usernameFromDB)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
+	}
+
+	// bandingkan jwt dan db
+	if usernameFromToken != usernameFromDB {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
 	}
 
 	var user entities.UpdateUser
@@ -759,6 +770,11 @@ func UpdateUserByID(c echo.Context) error {
 	}
 
 	// === Jika ada avatar baru ===
+	// cek jika Avatar_url kosong atau default
+	if user.Avatar_url == "" || strings.Contains(user.Avatar_url, "default") {
+		user.Avatar_url = currentUser.Avatar_url
+	}
+
 	if user.Avatar_url != "" {
 		tempURL := user.Avatar_url
 		fileName := filepath.Base(tempURL)
