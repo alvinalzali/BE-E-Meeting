@@ -355,6 +355,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - ApiKeyAuth: []
       summary: Reset user password
       tags:
       - User

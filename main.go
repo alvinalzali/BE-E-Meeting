@@ -13,8 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"BE-E-MEETING/app/entities"
-	_ "BE-E-MEETING/docs"
+	"BE-E-Meeting/app/entities"
+	"BE-E-Meeting/app/handler"
+	_ "BE-E-Meeting/docs"
 
 	"github.com/go-playground/validator/v10"
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -771,51 +772,12 @@ func UpdateUserByID(c echo.Context) error {
 
 	// === Jika ada avatar baru ===
 	// cek jika Avatar_url kosong atau default
-	if user.Avatar_url == "" || strings.Contains(user.Avatar_url, "default") {
-		user.Avatar_url = currentUser.Avatar_url
+	avatarResult, err := handler.HandleAvatarUpdate(c, idInt, currentUser.Avatar_url, user.Avatar_url)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Avatar update failed"})
 	}
 
-	if user.Avatar_url != "" {
-		tempURL := user.Avatar_url
-		fileName := filepath.Base(tempURL)
-
-		os.MkdirAll("./assets/image", os.ModePerm)
-		os.MkdirAll("./assets/image/users", os.ModePerm)
-
-		tempPath := filepath.Join("./assets/temp", fileName)
-		finalPath := filepath.Join("./assets/image/users", fileName)
-
-		// Pindahkan file
-		err = os.Rename(tempPath, finalPath)
-		if err != nil {
-			log.Println("Failed to move image:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Failed to move image"})
-		}
-
-		// Buat URL final
-		baseURL := c.Scheme() + "://" + c.Request().Host
-		user.Avatar_url = baseURL + "/assets/image/users/" + fileName
-
-		// Hapus avatar lama (jika bukan default)
-		if currentUser.Avatar_url != "" && !strings.Contains(currentUser.Avatar_url, "default") {
-			oldFile := filepath.Base(currentUser.Avatar_url)
-			os.Remove("./assets/image/users/" + oldFile)
-		}
-	} else {
-		// ambil nilai avatar lama pada database users
-		// jika ada, maka gunakan nilai avatar lama
-		// jika tidak ada, maka gunakan nilai default
-		var avatar_url string
-		err = db.QueryRow(`SELECT avatar_url FROM users WHERE id=$1`, idInt).Scan(&avatar_url)
-		if err != nil {
-			log.Println("Error fetching avatar_url:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error"})
-		}
-		if avatar_url != "" {
-			user.Avatar_url = avatar_url
-		}
-
-	}
+	user.Avatar_url = avatarResult
 
 	// --- Update user ---
 	sqlStatement := `

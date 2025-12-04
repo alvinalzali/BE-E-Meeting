@@ -276,6 +276,11 @@ const docTemplate = `{
         },
         "/password/reset/{id}": {
             "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
                 "description": "Reset user password using a valid reset token",
                 "consumes": [
                     "application/json"
