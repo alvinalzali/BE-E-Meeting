@@ -112,10 +112,10 @@ func main() {
 	e.POST("/uploads", UploadImage, roleAuthMiddleware("admin", "user")) //runnning
 
 	// route for rooms
-	e.POST("/rooms", CreateRoom, roleAuthMiddleware("admin"))
-	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin", "user"))
-	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin", "user"))
-	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin", "user"))
+	e.POST("/rooms", CreateRoom, roleAuthMiddleware("admin"))                                        // running
+	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin", "user"))                                   // running
+	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin", "user"))                            // running
+	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin", "user")) // running
 	e.PUT("/rooms/:id", UpdateRoom, roleAuthMiddleware("admin"))
 	e.DELETE("/rooms/:id", DeleteRoom, roleAuthMiddleware("admin"))
 
@@ -894,110 +894,9 @@ func CreateRoom(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room data"})
 	}
 
-	// Prepare imageURL variable (will be stored in DB)
-	imageURL := strings.TrimSpace(req.ImageURL)
-	finalFilename := ""
-	createdInRooms := false
-
-	// If frontend provided imageURL pointing to temp, move it to rooms
-	if imageURL != "" && strings.Contains(imageURL, "/assets/temp/") {
-		tempFilename := filepath.Base(imageURL)
-		tempPath := filepath.Join(".", "assets", "temp", tempFilename)
-
-		// ensure temp exists
-		if _, err := os.Stat(tempPath); err == nil {
-			// ensure rooms dir exists
-			uploadDir := filepath.Join(".", "assets", "rooms")
-			if err := os.MkdirAll(uploadDir, 0755); err != nil {
-				return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error creating upload directory"})
-			}
-
-			// create target filename
-			finalFilename = fmt.Sprintf("%d%s", time.Now().UnixNano(), filepath.Ext(tempFilename))
-			newPath := filepath.Join(uploadDir, finalFilename)
-
-			// try rename, fallback to copy+remove
-			if err := os.Rename(tempPath, newPath); err != nil {
-				// fallback
-				src, err := os.Open(tempPath)
-				if err != nil {
-					return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error processing uploaded image"})
-				}
-				defer src.Close()
-
-				dst, err := os.Create(newPath)
-				if err != nil {
-					return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error processing uploaded image"})
-				}
-				defer dst.Close()
-
-				if _, err = io.Copy(dst, src); err != nil {
-					// cleanup partial file
-					_ = os.Remove(newPath)
-					return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error saving image"})
-				}
-				_ = os.Remove(tempPath)
-			}
-			imageURL = fmt.Sprintf("%s/assets/rooms/%s", BaseURL, finalFilename)
-			createdInRooms = true
-		} else {
-			// temp file not found -> ignore and allow file upload path
-			imageURL = ""
-		}
-	}
-
-	// If no temp-image moved, accept direct multipart upload
-	if imageURL == "" {
-		file, err := c.FormFile("image")
-		if err != nil {
-			return c.JSON(http.StatusBadRequest, echo.Map{"message": "image file is required"})
-		}
-
-		// Validate file size (1MB)
-		if file.Size > 1<<20 {
-			return c.JSON(http.StatusBadRequest, echo.Map{"message": "image file size must be less than 1MB"})
-		}
-
-		src, err := file.Open()
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error opening uploaded file"})
-		}
-		defer src.Close()
-
-		// read header for mime detection
-		buf := make([]byte, 512)
-		n, _ := src.Read(buf)
-		contentType := http.DetectContentType(buf[:n])
-		if contentType != "image/jpeg" && contentType != "image/png" {
-			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid file type, only JPG/PNG allowed"})
-		}
-		// reset reader
-		if _, err := src.Seek(0, 0); err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error processing file"})
-		}
-
-		// ensure rooms dir exists
-		uploadDir := filepath.Join(".", "assets", "rooms")
-		if err := os.MkdirAll(uploadDir, 0755); err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error creating upload directory"})
-		}
-
-		finalFilename = fmt.Sprintf("%d%s", time.Now().UnixNano(), filepath.Ext(file.Filename))
-		dstPath := filepath.Join(uploadDir, finalFilename)
-
-		dst, err := os.Create(dstPath)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error creating destination file"})
-		}
-		defer dst.Close()
-
-		if _, err = io.Copy(dst, src); err != nil {
-			_ = os.Remove(dstPath)
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error saving file"})
-		}
-
-		imageURL = fmt.Sprintf("%s/assets/rooms/%s", BaseURL, finalFilename)
-		createdInRooms = true
+	// cek avatar jika kosong, isi dengan default avatar room
+	if req.ImageURL == "" {
+		req.ImageURL = DefaultRoomURL
 	}
 
 	// Insert into DB
@@ -1005,17 +904,12 @@ func CreateRoom(c echo.Context) error {
         INSERT INTO rooms (name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
     `
-	_, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, imageURL)
+	_, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL)
 	if err != nil {
-		// cleanup created file in rooms when DB insert fails
-		if createdInRooms && finalFilename != "" {
-			_ = os.Remove(filepath.Join(".", "assets", "rooms", finalFilename))
-		}
-		log.Println("CreateRoom DB insert error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "error saving room data"})
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	return c.JSON(http.StatusCreated, echo.Map{"message": "room created successfully", "imageURL": imageURL})
+	return c.JSON(http.StatusCreated, echo.Map{"message": "room created successfully", "imageURL": req.ImageURL})
 }
 
 // (GET /rooms) - List ruangan
@@ -2384,6 +2278,9 @@ func GetDashboard(c echo.Context) error {
 // @Security BearerAuth
 // @Router /rooms/{id}/reservation [get]
 func GetRoomReservationSchedule(c echo.Context) error {
+
+	// cek user
+
 	// Get room ID from path parameter
 	roomID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
