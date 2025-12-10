@@ -1124,6 +1124,23 @@ func UpdateRoom(c echo.Context) error {
 		})
 	}
 
+	if req.PricePerHour <= 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{
+			"message": "price per hour must be larger more than 0",
+		})
+	}
+
+	if req.ImageURL != "" {
+		// proses avatar room
+		roomImage, err := handler.HandleRoomImageCreate(c, req.ImageURL, DefaultRoomURL)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{
+				"message": "failed processing room image",
+			})
+		}
+		req.ImageURL = roomImage
+	}
+
 	query := `
         UPDATE rooms 
         SET name=$1, room_type=$2, capacity=$3, price_per_hour=$4, picture_url=$5, updated_at=NOW()

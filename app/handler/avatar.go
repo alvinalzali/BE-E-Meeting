@@ -95,6 +95,11 @@ func HandleRoomImageCreate(c echo.Context, tempURL string, DefaultRoomURL string
 		return DefaultRoomURL, nil
 	}
 
+	// jika kosong, dan contain assets/image/rooms, langsung return
+	if strings.Contains(tempURL, "assets/image/rooms") {
+		return tempURL, nil
+	}
+
 	fileName := filepath.Base(tempURL)
 
 	tempPath := filepath.Join("./assets/temp", fileName)
