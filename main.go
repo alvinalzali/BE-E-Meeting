@@ -1555,15 +1555,38 @@ func GetReservationHistory(c echo.Context) error {
 	roomType := c.QueryParam("type")
 	status := c.QueryParam("status")
 
-	// Validasi room type
-	validTypes := map[string]bool{
-		"small": true, "medium": true, "large": true,
-	}
-	if !validTypes[strings.ToLower(roomType)] {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "room type is not valid"})
+	// ✅ Validasi room type (jika diisi)
+	if roomType != "" {
+		roomType = strings.ToLower(roomType)
+		validTypes := map[string]bool{
+			"small":  true,
+			"medium": true,
+			"large":  true,
+		}
+
+		if !validTypes[roomType] {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"message": "room type is not valid",
+			})
+		}
 	}
 
-	// Pagination parameter
+	// ✅ Validasi status (opsional tapi recommended)
+	if status != "" {
+		status = strings.ToLower(status)
+		validStatus := map[string]bool{
+			"pending":   true,
+			"approved":  true,
+			"cancelled": true,
+		}
+		if !validStatus[status] {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"message": "status is not valid",
+			})
+		}
+	}
+
+	// ✅ Pagination
 	page, _ := strconv.Atoi(c.QueryParam("page"))
 	if page <= 0 {
 		page = 1
@@ -1574,14 +1597,19 @@ func GetReservationHistory(c echo.Context) error {
 	}
 	offset := (page - 1) * pageSize
 
-	// query filter
+	// ✅ Query utama
 	query := `
 	SELECT 
-		r.id, r.contact_name, r.contact_phone, r.contact_company,
+		r.id, 
+		r.contact_name, 
+		r.contact_phone, 
+		r.contact_company,
 		COALESCE(SUM(rd.snack_price),0) AS sub_total_snack,
 		COALESCE(SUM(rd.room_price),0) AS sub_total_room,
 		COALESCE(SUM(rd.snack_price + rd.room_price),0) AS total,
-		r.status_reservation, r.created_at, r.updated_at
+		r.status_reservation, 
+		r.created_at, 
+		r.updated_at
 	FROM reservations r
 	JOIN reservation_details rd ON rd.reservation_id = r.id
 	JOIN rooms rm ON rm.id = rd.room_id
@@ -1591,21 +1619,25 @@ func GetReservationHistory(c echo.Context) error {
 	args := []interface{}{}
 	argIdx := 1
 
+	// ✅ Filter dinamis
 	if startDate != "" {
 		query += fmt.Sprintf(" AND r.created_at >= $%d", argIdx)
 		args = append(args, startDate)
 		argIdx++
 	}
+
 	if endDate != "" {
 		query += fmt.Sprintf(" AND r.created_at <= $%d", argIdx)
 		args = append(args, endDate)
 		argIdx++
 	}
+
 	if roomType != "" {
 		query += fmt.Sprintf(" AND rm.room_type = $%d", argIdx)
 		args = append(args, roomType)
 		argIdx++
 	}
+
 	if status != "" {
 		query += fmt.Sprintf(" AND r.status_reservation = $%d", argIdx)
 		args = append(args, status)
@@ -1613,56 +1645,83 @@ func GetReservationHistory(c echo.Context) error {
 	}
 
 	query += `
-	GROUP BY r.id, r.contact_name, r.contact_phone, r.contact_company, r.status_reservation, r.created_at, r.updated_at
+	GROUP BY 
+		r.id, r.contact_name, r.contact_phone, 
+		r.contact_company, r.status_reservation, 
+		r.created_at, r.updated_at
 	ORDER BY r.created_at DESC
 	LIMIT $%d OFFSET $%d
 	`
 	query = fmt.Sprintf(query, argIdx, argIdx+1)
 	args = append(args, pageSize, offset)
 
-	// Jalankan query utama
+	// ✅ Eksekusi query
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		log.Println("Error fetching reservation history:", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"message": "internal server error",
+		})
 	}
 	defer rows.Close()
 
 	var histories []entities.ReservationHistoryData
+
+	// ✅ Scan data
 	for rows.Next() {
 		var h entities.ReservationHistoryData
+
 		err := rows.Scan(
-			&h.ID, &h.Name, &h.PhoneNumber, &h.Company,
-			&h.SubTotalSnack, &h.SubTotalRoom, &h.Total,
-			&h.Status, &h.CreatedAt, &h.UpdatedAt,
+			&h.ID,
+			&h.Name,
+			&h.PhoneNumber,
+			&h.Company,
+			&h.SubTotalSnack,
+			&h.SubTotalRoom,
+			&h.Total,
+			&h.Status,
+			&h.CreatedAt,
+			&h.UpdatedAt,
 		)
 		if err != nil {
 			log.Println("Error scanning reservation:", err)
-			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"message": "internal server error",
+			})
 		}
 
-		// Ambil data room per reservation
+		// ✅ Fetch room detail per reservation
 		roomRows, err := db.Query(`
-			SELECT rm.id, rm.price_per_hour, rm.name, rm.room_type,
-				COALESCE(rd.room_price,0), COALESCE(rd.snack_price,0)
+			SELECT 
+				rm.id, rm.price_per_hour, rm.name, rm.room_type,
+				COALESCE(rd.room_price,0), 
+				COALESCE(rd.snack_price,0)
 			FROM reservation_details rd
 			JOIN rooms rm ON rm.id = rd.room_id
 			WHERE rd.reservation_id = $1
 		`, h.ID)
 		if err != nil {
 			log.Println("Error fetching rooms:", err)
-			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"message": "internal server error",
+			})
 		}
 
 		for roomRows.Next() {
 			var r entities.ReservationHistoryRoomDetail
 			err := roomRows.Scan(
-				&r.ID, &r.Price, &r.Name, &r.Type,
-				&r.TotalRoom, &r.TotalSnack,
+				&r.ID,
+				&r.Price,
+				&r.Name,
+				&r.Type,
+				&r.TotalRoom,
+				&r.TotalSnack,
 			)
 			if err != nil {
 				log.Println("Error scanning room detail:", err)
-				return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+				return c.JSON(http.StatusInternalServerError, map[string]string{
+					"message": "internal server error",
+				})
 			}
 			h.Rooms = append(h.Rooms, r)
 		}
@@ -1671,7 +1730,7 @@ func GetReservationHistory(c echo.Context) error {
 		histories = append(histories, h)
 	}
 
-	// --- Hitung total data ---
+	// ✅ Hitung total data
 	var totalData int
 	countQuery := `
 		SELECT COUNT(DISTINCT r.id)
@@ -1680,6 +1739,7 @@ func GetReservationHistory(c echo.Context) error {
 		JOIN rooms rm ON rm.id = rd.room_id
 		WHERE 1=1
 	`
+
 	countArgs := []interface{}{}
 	argCount := 1
 
@@ -1706,18 +1766,27 @@ func GetReservationHistory(c echo.Context) error {
 
 	err = db.QueryRow(countQuery, countArgs...).Scan(&totalData)
 	if err != nil {
-		log.Println("Error counting data:", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+		log.Println("Error counting history:", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"message": "internal server error",
+		})
 	}
 
 	totalPage := int(math.Ceil(float64(totalData) / float64(pageSize)))
 
-	// --- Jika tidak ada data ---
+	// ✅ Jika kosong → tetap sukses (bukan error)
 	if len(histories) == 0 {
-		return c.JSON(http.StatusNotFound, map[string]string{"message": "url not found"})
+		return c.JSON(http.StatusOK, entities.ReservationHistoryResponse{
+			Message:   "No reservation history found",
+			Data:      []entities.ReservationHistoryData{},
+			Page:      page,
+			PageSize:  pageSize,
+			TotalPage: totalPage,
+			TotalData: totalData,
+		})
 	}
 
-	// --- Response sukses ---
+	// ✅ Response sukses
 	return c.JSON(http.StatusOK, entities.ReservationHistoryResponse{
 		Message:   "Reservation history fetched successfully",
 		Data:      histories,
@@ -2013,58 +2082,92 @@ func UpdateReservationStatus(c echo.Context) error {
 // @Security BearerAuth
 // @Router /reservations/schedules [get]
 func GetReservationSchedules(c echo.Context) error {
-	// Parse date parameters
 	startDate := c.QueryParam("startDate")
 	endDate := c.QueryParam("endDate")
 
-	if startDate == "" || endDate == "" {
+	var (
+		start time.Time
+		end   time.Time
+		err   error
+	)
+
+	// ✅ Validasi parsing startDate (jika ada)
+	if startDate != "" {
+		start, err = time.Parse("2006-01-02", startDate)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{
+				"message": "invalid startDate format, use YYYY-MM-DD",
+			})
+		}
+	}
+
+	// ✅ Validasi parsing endDate (jika ada)
+	if endDate != "" {
+		end, err = time.Parse("2006-01-02", endDate)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{
+				"message": "invalid endDate format, use YYYY-MM-DD",
+			})
+		}
+	}
+
+	// ✅ Validasi range jika keduanya ada
+	if !start.IsZero() && !end.IsZero() && start.After(end) {
 		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "start date and end date are required",
+			"message": "startDate must be before endDate",
 		})
 	}
 
-	start, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "invalid start date format, use YYYY-MM-DD",
-		})
-	}
-
-	end, err := time.Parse("2006-01-02", endDate)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "invalid end date format, use YYYY-MM-DD",
-		})
-	}
-
-	if start.After(end) {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "start date must be before end date",
-		})
-	}
-
-	// Parse pagination parameters
+	// ✅ Pagination
 	page, _ := strconv.Atoi(c.QueryParam("page"))
-	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
-
 	if page < 1 {
 		page = 1
 	}
+
+	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
 	if pageSize < 1 {
 		pageSize = 10
 	}
 
 	offset := (page - 1) * pageSize
 
-	// Get total count
+	// ==============================
+	// ✅ DECLARE TOTAL DATA
+	// ==============================
+
 	var totalData int
+
+	// ==============================
+	// ✅ BUILD FILTER SQL DINAMIS
+	// ==============================
+
+	filterSQL := " WHERE 1=1 "
+	args := []interface{}{}
+	argIdx := 1
+
+	if !start.IsZero() {
+		filterSQL += fmt.Sprintf(" AND DATE(rd.start_at) >= $%d", argIdx)
+		args = append(args, start)
+		argIdx++
+	}
+
+	if !end.IsZero() {
+		filterSQL += fmt.Sprintf(" AND DATE(rd.start_at) <= $%d", argIdx)
+		args = append(args, end)
+		argIdx++
+	}
+
+	// ==============================
+	// ✅ COUNT QUERY
+	// ==============================
+
 	countQuery := `
-        SELECT COUNT(DISTINCT rd.room_id)
-        FROM reservation_details rd
-        JOIN reservations r ON rd.reservation_id = r.id
-        WHERE DATE(rd.start_at) BETWEEN $1 AND $2
-    `
-	err = db.QueryRow(countQuery, start, end).Scan(&totalData)
+		SELECT COUNT(DISTINCT rd.room_id)
+		FROM reservation_details rd
+		JOIN reservations r ON rd.reservation_id = r.id
+	` + filterSQL
+
+	err = db.QueryRow(countQuery, args...).Scan(&totalData)
 	if err != nil {
 		log.Println("Count query error:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{
@@ -2072,34 +2175,39 @@ func GetReservationSchedules(c echo.Context) error {
 		})
 	}
 
-	// Get schedules
-	query := `
-        WITH RoomReservations AS (
-            SELECT DISTINCT rd.room_id
-            FROM reservation_details rd
-            WHERE DATE(rd.start_at) BETWEEN $1 AND $2
-            LIMIT $3 OFFSET $4
-        )
-        SELECT 
-            r.id,
-            r.name AS room_name,
-            res.contact_company,
-            rd.start_at,
-            rd.end_at,
-            CASE
-                WHEN rd.end_at < NOW() THEN 'Done'
-                WHEN rd.start_at <= NOW() AND rd.end_at >= NOW() THEN 'In Progress'
-                ELSE 'Up Coming'
-            END as status
-        FROM RoomReservations rr
-        JOIN rooms r ON rr.room_id = r.id
-        LEFT JOIN reservation_details rd ON r.id = rd.room_id
-        LEFT JOIN reservations res ON rd.reservation_id = res.id
-        WHERE DATE(rd.start_at) BETWEEN $1 AND $2
-        ORDER BY r.id, rd.start_at
-    `
+	// ==============================
+	// ✅ MAIN QUERY
+	// ==============================
 
-	rows, err := db.Query(query, start, end, pageSize, offset)
+	query := `
+		WITH RoomReservations AS (
+			SELECT DISTINCT rd.room_id
+			FROM reservation_details rd
+	` + filterSQL + `
+			LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1) + `
+		)
+		SELECT 
+			r.id,
+			r.name AS room_name,
+			res.contact_company,
+			rd.start_at,
+			rd.end_at,
+			CASE
+				WHEN rd.end_at < NOW() THEN 'Done'
+				WHEN rd.start_at <= NOW() AND rd.end_at >= NOW() THEN 'In Progress'
+				ELSE 'Up Coming'
+			END as status
+		FROM RoomReservations rr
+		JOIN rooms r ON rr.room_id = r.id
+		LEFT JOIN reservation_details rd ON r.id = rd.room_id
+		LEFT JOIN reservations res ON rd.reservation_id = res.id
+	` + filterSQL + `
+		ORDER BY r.id, rd.start_at
+	`
+
+	args = append(args, pageSize, offset)
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		log.Println("Schedule query error:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{
@@ -2108,7 +2216,12 @@ func GetReservationSchedules(c echo.Context) error {
 	}
 	defer rows.Close()
 
+	// ==============================
+	// ✅ PROCESS DATA
+	// ==============================
+
 	scheduleMap := make(map[string]*entities.RoomScheduleInfo)
+
 	for rows.Next() {
 		var (
 			roomID, roomName   string
@@ -2130,7 +2243,7 @@ func GetReservationSchedules(c echo.Context) error {
 				ID:          roomID,
 				RoomName:    roomName,
 				CompanyName: companyName.String,
-				Schedules:   make([]entities.Schedule, 0),
+				Schedules:   []entities.Schedule{},
 			}
 		}
 
@@ -2141,10 +2254,13 @@ func GetReservationSchedules(c echo.Context) error {
 		})
 	}
 
-	// Convert map to slice
+	// ==============================
+	// ✅ MAP → SLICE
+	// ==============================
+
 	schedules := make([]entities.RoomScheduleInfo, 0, len(scheduleMap))
-	for _, schedule := range scheduleMap {
-		schedules = append(schedules, *schedule)
+	for _, s := range scheduleMap {
+		schedules = append(schedules, *s)
 	}
 
 	totalPages := (totalData + pageSize - 1) / pageSize
@@ -2178,37 +2294,45 @@ func GetReservationSchedules(c echo.Context) error {
 // @Security BearerAuth
 // @Router /dashboard [get]
 func GetDashboard(c echo.Context) error {
-	// Parse date parameters
 	startDate := c.QueryParam("startDate")
 	endDate := c.QueryParam("endDate")
 
-	if startDate == "" || endDate == "" {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "start date and end date are required",
-		})
+	var (
+		start time.Time
+		end   time.Time
+		err   error
+	)
+
+	// ✅ Parse startDate jika ada
+	if startDate != "" {
+		start, err = time.Parse("2006-01-02", startDate)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{
+				"message": "invalid startDate format, use YYYY-MM-DD",
+			})
+		}
 	}
 
-	start, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "invalid start date format, use YYYY-MM-DD",
-		})
+	// ✅ Parse endDate jika ada
+	if endDate != "" {
+		end, err = time.Parse("2006-01-02", endDate)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{
+				"message": "invalid endDate format, use YYYY-MM-DD",
+			})
+		}
 	}
 
-	end, err := time.Parse("2006-01-02", endDate)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "invalid end date format, use YYYY-MM-DD",
-		})
-	}
-
-	if start.After(end) {
+	// ✅ Validasi range
+	if !start.IsZero() && !end.IsZero() && start.After(end) {
 		return c.JSON(http.StatusBadRequest, echo.Map{
 			"message": "start date must be smaller than end date",
 		})
 	}
 
-	// Get total rooms
+	// ==============================
+	// ✅ TOTAL ROOM
+	// ==============================
 	var totalRoom int
 	err = db.QueryRow(`SELECT COUNT(*) FROM rooms`).Scan(&totalRoom)
 	if err != nil {
@@ -2216,50 +2340,76 @@ func GetDashboard(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	// Get total visitors and reservations for paid transactions
+	// ==============================
+	// ✅ FILTER (UNTUK RESERVATIONS)
+	// ==============================
+	filterSQL := " WHERE res.status_reservation = 'paid' "
+	args := []interface{}{}
+	argIdx := 1
+
+	if !start.IsZero() {
+		filterSQL += fmt.Sprintf(" AND DATE(res.created_at) >= $%d", argIdx)
+		args = append(args, start)
+		argIdx++
+	}
+	if !end.IsZero() {
+		filterSQL += fmt.Sprintf(" AND DATE(res.created_at) <= $%d", argIdx)
+		args = append(args, end)
+		argIdx++
+	}
+
+	// ==============================
+	// ✅ TOTAL VISITOR / RESERVATION / OMZET
+	// ==============================
 	var totalVisitor, totalReservation int
 	var totalOmzet float64
-	err = db.QueryRow(`
-        SELECT 
-            COALESCE(SUM(rd.total_participants), 0) as total_visitors,
-            COUNT(DISTINCT r.id) as total_reservations,
-            COALESCE(SUM(r.total), 0) as total_omzet
-        FROM reservations r
-        JOIN reservation_details rd ON r.id = rd.reservation_id
-        WHERE r.status_reservation = 'paid'
-        AND DATE(r.created_at) BETWEEN $1 AND $2
-    `, start, end).Scan(&totalVisitor, &totalReservation, &totalOmzet)
+
+	totalsQuery := `
+		SELECT 
+			COALESCE(SUM(rd.total_participants), 0),
+			COUNT(DISTINCT res.id),
+			COALESCE(SUM(res.total), 0)
+		FROM reservations res
+		JOIN reservation_details rd ON res.id = rd.reservation_id
+	` + filterSQL
+
+	err = db.QueryRow(totalsQuery, args...).Scan(&totalVisitor, &totalReservation, &totalOmzet)
 	if err != nil {
 		log.Println("Totals query error:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	// Get room-specific stats
-	rows, err := db.Query(`
-        WITH RoomStats AS (
-            SELECT 
-                r.id,
-                r.name,
-                COALESCE(SUM(res.total), 0) as omzet,
-                COUNT(DISTINCT res.id) as reservation_count
-            FROM rooms r
-            LEFT JOIN reservation_details rd ON r.id = rd.room_id
-            LEFT JOIN reservations res ON rd.reservation_id = res.id
-                AND res.status_reservation = 'paid'
-                AND DATE(res.created_at) BETWEEN $1 AND $2
-            GROUP BY r.id, r.name
-        )
-        SELECT 
-            id,
-            name,
-            omzet,
-            CASE 
-                WHEN $3 = 0 THEN 0
-                ELSE (reservation_count::float / $3::float) * 100
-            END as percentage_of_usage
-        FROM RoomStats
-        ORDER BY omzet DESC
-    `, start, end, totalReservation)
+	// ==============================
+	// ✅ ROOM STATS
+	// ==============================
+	roomQuery := `
+		WITH RoomStats AS (
+			SELECT 
+				r.id,
+				r.name,
+				COALESCE(SUM(res.total), 0) AS omzet,
+				COUNT(DISTINCT res.id) AS reservation_count
+			FROM rooms r
+			LEFT JOIN reservation_details rd ON r.id = rd.room_id
+			LEFT JOIN reservations res ON rd.reservation_id = res.id
+	` + filterSQL + `
+			GROUP BY r.id, r.name
+		)
+		SELECT 
+			id,
+			name,
+			omzet,
+			CASE 
+				WHEN $` + strconv.Itoa(argIdx) + ` = 0 THEN 0
+				ELSE (reservation_count::float / $` + strconv.Itoa(argIdx) + `::float) * 100
+			END AS percentage_of_usage
+		FROM RoomStats
+		ORDER BY omzet DESC
+	`
+
+	roomArgs := append(args, totalReservation)
+
+	rows, err := db.Query(roomQuery, roomArgs...)
 	if err != nil {
 		log.Println("Room stats query error:", err)
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
@@ -2269,14 +2419,16 @@ func GetDashboard(c echo.Context) error {
 	var rooms []entities.DashboardRoom
 	for rows.Next() {
 		var room entities.DashboardRoom
-		err := rows.Scan(&room.ID, &room.Name, &room.Omzet, &room.PercentageOfUsage)
-		if err != nil {
+		if err := rows.Scan(&room.ID, &room.Name, &room.Omzet, &room.PercentageOfUsage); err != nil {
 			log.Println("Room stats scan error:", err)
 			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 		}
 		rooms = append(rooms, room)
 	}
 
+	// ==============================
+	// ✅ RESPONSE
+	// ==============================
 	response := entities.DashboardResponse{
 		Message: "get dashboard data success",
 	}
