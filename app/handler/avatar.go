@@ -87,79 +87,41 @@ func HandleAvatarUpdate(c echo.Context, userID int, oldAvatarURL, newAvatarURL s
 
 }
 
-func HandleRoomImageUpdate(c echo.Context, roomID int, oldAvatarURL, newAvatarURL string) (string, error) {
+func HandleRoomImageCreate(c echo.Context, tempURL string, DefaultRoomURL string) (string, error) {
 
-	log.Printf("[INFO] [handleRoomImageUpdate] room_id=%d avatar update requested", roomID)
-
-	//jika avatar tidak berubah, langsung return file lama
-	if newAvatarURL == "" || newAvatarURL == oldAvatarURL {
-		return oldAvatarURL, nil
+	// Jika kosong / default, langsung return
+	if tempURL == "" || strings.Contains(tempURL, "default") {
+		log.Println("[INFO] Room image default, skip move")
+		return DefaultRoomURL, nil
 	}
 
-	fileName := filepath.Base(newAvatarURL)
+	fileName := filepath.Base(tempURL)
 
 	tempPath := filepath.Join("./assets/temp", fileName)
 	finalPath := filepath.Join("./assets/image/rooms", fileName)
 
-	log.Printf("[DEBUG] [handleRoomImageUpdate] room_id=%d temp=%s final=%s",
-		roomID, tempPath, finalPath,
-	)
+	log.Printf("[INFO] CreateRoom moving image %s → %s\n", tempPath, finalPath)
 
-	//cek folder final ada
+	// Cek file temp
+	if _, err := os.Stat(tempPath); err != nil {
+		log.Printf("[ERROR] Temp room image not found: %s", tempPath)
+		return DefaultRoomURL, fmt.Errorf("temp image not found")
+	}
+
+	// Buat folder final
 	_ = os.MkdirAll("./assets/image/rooms", os.ModePerm)
 
-	// Cek file temp ada
-	if _, err := os.Stat(tempPath); err != nil {
-		log.Printf("[ERROR] [handleRoomImageUpdate] Temp file not found room_id=%d file=%s err=%v",
-			roomID, tempPath, err,
-		)
-		return oldAvatarURL, fmt.Errorf("temp file not found")
+	// Pindahkan file
+	if err := os.Rename(tempPath, finalPath); err != nil {
+		log.Printf("[ERROR] Failed move room image: %v", err)
+		return DefaultRoomURL, err
 	}
 
-	// Pindahkan file temp ke final
-	err := os.Rename(tempPath, finalPath)
-	if err != nil {
-		log.Printf("[ERROR] [handleRoomImageUpdate] Failed moving file room_id=%d src=%s dest=%s err=%v",
-			roomID, tempPath, finalPath, err,
-		)
-		return oldAvatarURL, err
-	}
-
-	log.Printf("[INFO] [handleRoomImageUpdate] Avatar moved room_id=%d new_file=%s",
-		roomID, finalPath,
-	)
-
-	// url final
+	// Buat URL final
 	baseURL := c.Scheme() + "://" + c.Request().Host
 	finalURL := baseURL + "/assets/image/rooms/" + fileName
 
-	// hapus file lama
-	if oldAvatarURL != "" && !strings.Contains(oldAvatarURL, "default") {
-
-		oldFile := filepath.Base(oldAvatarURL)
-		oldPath := filepath.Join("./assets/image/rooms", oldFile)
-
-		log.Printf("[INFO] [handleRoomImageUpdate] Removing old avatar room_id=%d file=%s",
-			roomID, oldPath,
-		)
-
-		if err := os.Remove(oldPath); err != nil {
-
-			log.Printf("[WARN] [handleRoomImageUpdate] Failed removing old avatar room_id=%d file=%s",
-				roomID, oldPath,
-			)
-
-			// rollback ketika gagal dan hapus avatar baru
-			_ = os.Remove(finalPath)
-
-			return oldAvatarURL, fmt.Errorf("rollback: failed removing old avatar")
-		}
-	}
-
-	log.Printf("[INFO] [handleRoomImageUpdate] Avatar updated room_id=%d new_url=%s",
-		roomID, finalURL,
-	)
+	log.Println("[INFO] Room image success:", finalURL)
 
 	return finalURL, nil
-
 }

@@ -884,32 +884,41 @@ func UploadImage(c echo.Context) error {
 func CreateRoom(c echo.Context) error {
 	var req entities.RoomRequest
 
-	// Bind JSON body
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	// Basic validation
 	if req.Name == "" || req.Type == "" || req.Capacity <= 0 || req.PricePerHour <= 0 {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room data"})
 	}
 
-	// cek avatar jika kosong, isi dengan default avatar room
-	if req.ImageURL == "" {
-		req.ImageURL = DefaultRoomURL
+	var roomImage string
+	var err error
+
+	// proses avatar room
+	roomImage, err = handler.HandleRoomImageCreate(c, req.ImageURL, DefaultRoomURL)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{
+			"message": "failed processing room image",
+		})
 	}
+
+	req.ImageURL = roomImage
 
 	// Insert into DB
 	query := `
         INSERT INTO rooms (name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
     `
-	_, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL)
+	_, err = db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 
-	return c.JSON(http.StatusCreated, echo.Map{"message": "room created successfully", "imageURL": req.ImageURL})
+	return c.JSON(http.StatusCreated, echo.Map{
+		"message":  "room created successfully",
+		"imageURL": req.ImageURL,
+	})
 }
 
 // (GET /rooms) - List ruangan
