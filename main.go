@@ -116,26 +116,26 @@ func main() {
 	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin", "user"))                                   // running
 	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin", "user"))                            // running
 	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin", "user")) // running
-	e.PUT("/rooms/:id", UpdateRoom, roleAuthMiddleware("admin"))
-	e.DELETE("/rooms/:id", DeleteRoom, roleAuthMiddleware("admin"))
+	e.PUT("/rooms/:id", UpdateRoom, roleAuthMiddleware("admin"))                                     // running
+	e.DELETE("/rooms/:id", DeleteRoom, roleAuthMiddleware("admin"))                                  // running
 
 	// route for snacks
-	e.GET("/snacks", GetSnacks, roleAuthMiddleware("admin", "user"))
+	e.GET("/snacks", GetSnacks, roleAuthMiddleware("admin", "user")) // running
 
 	// route for reservations
-	e.GET("/reservation/calculation", CalculateReservation, roleAuthMiddleware("admin", "user"))
-	e.POST("/reservation", CreateReservation, roleAuthMiddleware("admin", "user"))
-	e.GET("/reservation/history", GetReservationHistory, roleAuthMiddleware("user"))
-	e.PUT("/reservation/status", UpdateReservationStatus, roleAuthMiddleware("admin", "user"))
-	e.GET("/reservation/:id", GetReservationByID, roleAuthMiddleware("admin", "user"))
-	e.GET("/reservations/schedules", GetReservationSchedules, roleAuthMiddleware("admin"))
+	e.GET("/reservation/calculation", CalculateReservation, roleAuthMiddleware("admin", "user")) // running
+	e.POST("/reservation", CreateReservation, roleAuthMiddleware("admin", "user"))               // running
+	e.GET("/reservation/history", GetReservationHistory, roleAuthMiddleware("user"))             // running
+	e.PUT("/reservation/status", UpdateReservationStatus, roleAuthMiddleware("admin", "user"))   // running
+	e.GET("/reservation/:id", GetReservationByID, roleAuthMiddleware("admin", "user"))           // running
+	e.GET("/reservations/schedules", GetReservationSchedules, roleAuthMiddleware("admin"))       // running
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
-	e.GET("/dashboard", GetDashboard, roleAuthMiddleware("admin"))
+	e.GET("/dashboard", GetDashboard, roleAuthMiddleware("admin")) // running
 
 	// route users
-	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user")) //runnning
-	e.PUT("/users/:id", UpdateUserByID, roleAuthMiddleware("admin", "user"))
+	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user"))    //runnning
+	e.PUT("/users/:id", UpdateUserByID, roleAuthMiddleware("admin", "user")) // running
 
 	e.Logger.Fatal(e.Start(":8080"))
 
@@ -2303,7 +2303,9 @@ func GetDashboard(c echo.Context) error {
 		err   error
 	)
 
-	// ✅ Parse startDate jika ada
+	// ==============================
+	// PARSE OPTIONAL DATE PARAMS
+	// ==============================
 	if startDate != "" {
 		start, err = time.Parse("2006-01-02", startDate)
 		if err != nil {
@@ -2313,7 +2315,6 @@ func GetDashboard(c echo.Context) error {
 		}
 	}
 
-	// ✅ Parse endDate jika ada
 	if endDate != "" {
 		end, err = time.Parse("2006-01-02", endDate)
 		if err != nil {
@@ -2323,7 +2324,6 @@ func GetDashboard(c echo.Context) error {
 		}
 	}
 
-	// ✅ Validasi range
 	if !start.IsZero() && !end.IsZero() && start.After(end) {
 		return c.JSON(http.StatusBadRequest, echo.Map{
 			"message": "start date must be smaller than end date",
@@ -2331,7 +2331,7 @@ func GetDashboard(c echo.Context) error {
 	}
 
 	// ==============================
-	// ✅ TOTAL ROOM
+	// TOTAL ROOMS
 	// ==============================
 	var totalRoom int
 	err = db.QueryRow(`SELECT COUNT(*) FROM rooms`).Scan(&totalRoom)
@@ -2341,25 +2341,26 @@ func GetDashboard(c echo.Context) error {
 	}
 
 	// ==============================
-	// ✅ FILTER (UNTUK RESERVATIONS)
+	// FILTER FOR reservation_details
 	// ==============================
-	filterSQL := " WHERE res.status_reservation = 'paid' "
+	filterSQL := ` WHERE res.status_reservation = 'paid' `
 	args := []interface{}{}
 	argIdx := 1
 
+	// Filter menggunakan rd.start_at dan rd.end_at
 	if !start.IsZero() {
-		filterSQL += fmt.Sprintf(" AND DATE(res.created_at) >= $%d", argIdx)
+		filterSQL += fmt.Sprintf(" AND DATE(rd.start_at) >= $%d", argIdx)
 		args = append(args, start)
 		argIdx++
 	}
 	if !end.IsZero() {
-		filterSQL += fmt.Sprintf(" AND DATE(res.created_at) <= $%d", argIdx)
+		filterSQL += fmt.Sprintf(" AND DATE(rd.end_at) <= $%d", argIdx)
 		args = append(args, end)
 		argIdx++
 	}
 
 	// ==============================
-	// ✅ TOTAL VISITOR / RESERVATION / OMZET
+	// TOTALS QUERY
 	// ==============================
 	var totalVisitor, totalReservation int
 	var totalOmzet float64
@@ -2380,7 +2381,7 @@ func GetDashboard(c echo.Context) error {
 	}
 
 	// ==============================
-	// ✅ ROOM STATS
+	// ROOM STATS
 	// ==============================
 	roomQuery := `
 		WITH RoomStats AS (
@@ -2392,6 +2393,7 @@ func GetDashboard(c echo.Context) error {
 			FROM rooms r
 			LEFT JOIN reservation_details rd ON r.id = rd.room_id
 			LEFT JOIN reservations res ON rd.reservation_id = res.id
+				AND res.status_reservation = 'paid'
 	` + filterSQL + `
 			GROUP BY r.id, r.name
 		)
@@ -2412,6 +2414,8 @@ func GetDashboard(c echo.Context) error {
 	rows, err := db.Query(roomQuery, roomArgs...)
 	if err != nil {
 		log.Println("Room stats query error:", err)
+		log.Println("QUERY:", roomQuery)
+		log.Println("ARGS:", roomArgs)
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
 	}
 	defer rows.Close()
@@ -2427,7 +2431,7 @@ func GetDashboard(c echo.Context) error {
 	}
 
 	// ==============================
-	// ✅ RESPONSE
+	// RESPONSE
 	// ==============================
 	response := entities.DashboardResponse{
 		Message: "get dashboard data success",
