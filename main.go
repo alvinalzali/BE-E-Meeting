@@ -13,9 +13,12 @@ import (
 	"strings"
 	"time"
 
+	// import package custom
 	"BE-E-Meeting/app/entities"
 	"BE-E-Meeting/app/handler"
 	"BE-E-Meeting/app/middleware"
+	"BE-E-Meeting/app/repositories"
+	"BE-E-Meeting/app/usecases"
 	"BE-E-Meeting/database"
 	_ "BE-E-Meeting/docs"
 
@@ -98,15 +101,27 @@ func main() {
 
 	e.Validator = &CustomValdator{validator: validator.New()}
 
+	// depedency injection
+	// init repository
+	userRepo := repositories.NewUserRepository(db)
+
+	// init usecase
+	userUsecase := usecases.NewUserUsecase(userRepo)
+
+	// init handler
+	userHandler := handler.NewUserHandler(userUsecase)
+
+	// Routes
+
 	// route for swagger
 	e.GET("/swagger/*", echoSwagger.WrapHandler) //runnning
 
-	//assets
+	// route for assets
 	e.Static("/assets", "./assets")
 
 	// route for login, register, password reset
-	e.POST("/login", login)                                                                       //running
-	e.POST("/register", RegisterUser)                                                             //running
+	e.POST("/login", userHandler.Login)                                                           //running
+	e.POST("/register", userHandler.Register)                                                     //running
 	e.POST("password/reset_request", PasswordReset)                                               //running
 	e.PUT("/password/reset/:id", PasswordResetId, middleware.RoleAuthMiddleware("admin", "user")) //id ini token reset password yang dikirim via email //runnning
 
@@ -136,8 +151,8 @@ func main() {
 	e.GET("/dashboard", GetDashboard, middleware.RoleAuthMiddleware("admin")) // running
 
 	// route users
-	e.GET("/users/:id", GetUserByID, middleware.RoleAuthMiddleware("admin", "user"))    //runnning
-	e.PUT("/users/:id", UpdateUserByID, middleware.RoleAuthMiddleware("admin", "user")) // running
+	e.GET("/users/:id", userHandler.GetProfile, middleware.RoleAuthMiddleware("admin", "user")) //runnning
+	e.PUT("/users/:id", UpdateUserByID, middleware.RoleAuthMiddleware("admin", "user"))         // running
 
 	e.Logger.Fatal(e.Start(":8080"))
 
@@ -148,9 +163,7 @@ func migrateUp(db *sql.DB) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"postgres", driver)
+	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -169,9 +182,7 @@ func migrateDown(db *sql.DB) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"postgres", driver)
+	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -181,129 +192,6 @@ func migrateDown(db *sql.DB) {
 	}
 
 	fmt.Println("Migrate down successfully")
-}
-
-// login godoc
-// @Summary Login user
-// @Description Login user
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param loginData body entities.Login true "Login data"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 401 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /login [post]
-func login(c echo.Context) error {
-	var loginData entities.Login
-
-	if err := c.Bind(&loginData); err != nil {
-		//error code 400
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Login Failed"}) //"Invalid Input"
-	}
-	//cek username apakah email atau username
-	var sqlStatement string
-	if isEmail(loginData.Username) {
-		sqlStatement = `SELECT username, password_hash FROM users WHERE email=$1`
-	} else {
-		sqlStatement = `SELECT username, password_hash FROM users WHERE username=$1`
-	}
-
-	var storedUsername, storedPasswordHash string
-	err := db.QueryRow(sqlStatement, loginData.Username).Scan(&storedUsername, &storedPasswordHash)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			// error 500 //ini kan error 401, jadi gimana?
-			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"}) //"User Not Found"
-		}
-		// error 500
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Database Error"
-	}
-
-	// hash the provided password and compare with stored hash
-	err = bcrypt.CompareHashAndPassword([]byte(storedPasswordHash), []byte(loginData.Password))
-	if err != nil {
-		// error 500 //ini kan error 401, jadi gimana?
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Credentials"}) //"Invalid Password"
-	}
-
-	// ambil role dari db
-	var role string
-	err = db.QueryRow(`SELECT role FROM users WHERE username=$1`, storedUsername).Scan(&role)
-	if err != nil {
-		// error 500
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Database Error"
-	}
-
-	// generate JWT access token
-	token, err := generateAccessToken(storedUsername, role)
-	if err != nil {
-		// error 500
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Token Generation Failed"
-	}
-
-	// generate JWT refresh token
-	refreshToken, err := generateRefreshToken(storedUsername, role)
-	if err != nil {
-		// error 500
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Token Generation Failed"
-	}
-
-	// ambil id dari tabel users
-	var user_id string
-	err = db.QueryRow(`SELECT id FROM users WHERE username=$1`, storedUsername).Scan(&user_id)
-	if err != nil {
-		// error 500
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Unknown Error"}) //"Database Error"
-	}
-
-	// return token
-	c.Response().Header().Set("Authorization", "Bearer "+token)
-	c.Response().Header().Set("Refresh-Token", "Bearer "+refreshToken)
-	c.Response().Header().Set("id", user_id)
-
-	// apa yang dimasukan ke cookie?
-
-	return c.JSON(http.StatusOK, echo.Map{"message": "Login successful", "accessToken": token, "refreshToken": refreshToken})
-}
-
-func isEmail(input string) bool {
-	// simple check for email format
-	for _, char := range input {
-		if char == '@' {
-			return true
-		}
-	}
-	return false
-}
-
-func generateAccessToken(username string, role string) (string, error) {
-	JwtSecret = []byte(os.Getenv("secret_key"))
-	claims := &entities.Claims{
-		Username: username,
-		Role:     role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(500 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(JwtSecret)
-}
-
-func generateRefreshToken(username string, role string) (string, error) {
-	JwtSecret = []byte(os.Getenv("secret_key"))
-	claims := &entities.Claims{
-		Username: username,
-		Role:     role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(JwtSecret)
 }
 
 func generateResetToken(email string) (string, error) {
@@ -317,58 +205,6 @@ func generateResetToken(email string) (string, error) {
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(JwtSecret)
-}
-
-// RegisterUser godoc
-// @Summary Register a new user
-// @Description Register a new user
-// @Tags Auth
-// @Accept json
-// @Produce json
-// @Param user body entities.User true "User object"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Router /register [post]
-func RegisterUser(c echo.Context) error {
-	var newUser entities.User
-
-	if err := c.Bind(&newUser); err != nil {
-		//error code 400
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Invalid Input"
-	}
-
-	if err := c.Validate(&newUser); err != nil {
-		//error code 400
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"}) //"Validation Error"
-	}
-
-	// cek password apakah ada angka, huruf besar, huruf kecil, dan simbol
-	if !isValidPassword(newUser.Password) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"})
-	}
-
-	// hash password
-	hashedPassword, err := hashPassword(newUser.Password)
-	if err != nil {
-		// error 500
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error cek"}) //"Password Hashing Failed"
-	}
-
-	//insert variable default, Enum status, role, lang
-	status := "active"
-
-	//var default avatar
-	avatar := DefaultAvatarURL
-
-	// insert to db
-	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status, avatar_url) VALUES ($1, $2, $3, $4, $5, $6)`
-	_, err = db.Exec(sqlStatement, newUser.Username, newUser.Email, hashedPassword, newUser.Name, status, avatar)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error database"}) //"Database Error"
-	}
-
-	return c.JSON(http.StatusOK, echo.Map{"message": "User registered successfully"})
 }
 
 func isValidPassword(password string) bool {
@@ -520,71 +356,6 @@ func PasswordReset(c echo.Context) error {
 	fmt.Println("Password reset requested for email:", resetReq.Email)
 
 	return c.JSON(http.StatusOK, echo.Map{"message": "Update Password Success!", "token": resetToken})
-}
-
-// GetUserByID godoc
-// @Summary Get user by ID
-// @Description Retrieve user details by user ID
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param id path string true "User ID"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Security     BearerAuth
-// @Router /users/{id} [get]
-func GetUserByID(c echo.Context) error {
-	id := c.Param("id")
-
-	idInt, err := strconv.Atoi(id)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
-	}
-
-	// ambil jwt dari auth header
-	userToken := c.Get("user").(*jwt.Token)
-	claims := userToken.Claims.(jwt.MapClaims)
-
-	// ambil username dari jwt
-	usernameFromToken := claims["username"].(string)
-
-	// ambil username dari db berdasarkan id
-	var usernameFromDB string
-	err = db.QueryRow("SELECT username FROM users WHERE id = $1", idInt).Scan(&usernameFromDB)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-
-	// bandingkan jwt dan db
-	if usernameFromToken != usernameFromDB {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-
-	var user entities.GetUser
-	sqlStatement := `SELECT id, username, email, name, avatar_url, lang, role, status, created_at, updated_at FROM users WHERE id=$1`
-	err = db.QueryRow(sqlStatement, idInt).Scan(
-		&user.Id, &user.Username, &user.Email, &user.Name,
-		&user.Avatar_url, &user.Lang, &user.Role, &user.Status,
-		&user.Created_at, &user.Updated_at,
-	)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return c.JSON(http.StatusNotFound, echo.Map{"error": "User not found"})
-		}
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error", "detail": err.Error()})
-	}
-
-	if user.Avatar_url == "" {
-		user.Avatar_url = DefaultAvatarURL
-	}
-
-	return c.JSON(http.StatusOK, echo.Map{
-		"data":    user,
-		"message": "User retrieved successfully",
-	})
 }
 
 // buat fungsi UpdateUserByID dengan request dan response sesuai updateUser struct
