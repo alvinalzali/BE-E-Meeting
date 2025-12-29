@@ -15,10 +15,12 @@ import (
 
 	"BE-E-Meeting/app/entities"
 	"BE-E-Meeting/app/handler"
+	"BE-E-Meeting/app/middleware"
+	"BE-E-Meeting/database"
 	_ "BE-E-Meeting/docs"
 
 	"github.com/go-playground/validator/v10"
-	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -73,7 +75,7 @@ func main() {
 	dbPassword := os.Getenv("db_password")
 	dbName := os.Getenv("db_name")
 
-	db = ConnectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
+	db = database.ConnectDB(dbUser, dbPassword, dbName, dbHost, dbPort)
 
 	// Skip interactive migration prompt in Docker (use separate migrate service)
 	skipMigration := os.Getenv("SKIP_MIGRATION")
@@ -103,39 +105,39 @@ func main() {
 	e.Static("/assets", "./assets")
 
 	// route for login, register, password reset
-	e.POST("/login", login)                                                            //running
-	e.POST("/register", RegisterUser)                                                  //running
-	e.POST("password/reset_request", PasswordReset)                                    //running
-	e.PUT("/password/reset/:id", PasswordResetId, roleAuthMiddleware("admin", "user")) //id ini token reset password yang dikirim via email //runnning
+	e.POST("/login", login)                                                                       //running
+	e.POST("/register", RegisterUser)                                                             //running
+	e.POST("password/reset_request", PasswordReset)                                               //running
+	e.PUT("/password/reset/:id", PasswordResetId, middleware.RoleAuthMiddleware("admin", "user")) //id ini token reset password yang dikirim via email //runnning
 
 	// harus pake auth
-	e.POST("/uploads", UploadImage, roleAuthMiddleware("admin", "user")) //runnning
+	e.POST("/uploads", UploadImage, middleware.RoleAuthMiddleware("admin", "user")) //runnning
 
 	// route for rooms
-	e.POST("/rooms", CreateRoom, roleAuthMiddleware("admin"))                                        // running
-	e.GET("/rooms", GetRooms, roleAuthMiddleware("admin", "user"))                                   // running
-	e.GET("/rooms/:id", GetRoomByID, roleAuthMiddleware("admin", "user"))                            // running
-	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, roleAuthMiddleware("admin", "user")) // running
-	e.PUT("/rooms/:id", UpdateRoom, roleAuthMiddleware("admin"))                                     // running
-	e.DELETE("/rooms/:id", DeleteRoom, roleAuthMiddleware("admin"))                                  // running
+	e.POST("/rooms", CreateRoom, middleware.RoleAuthMiddleware("admin"))                                        // running
+	e.GET("/rooms", GetRooms, middleware.RoleAuthMiddleware("admin", "user"))                                   // running
+	e.GET("/rooms/:id", GetRoomByID, middleware.RoleAuthMiddleware("admin", "user"))                            // running
+	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, middleware.RoleAuthMiddleware("admin", "user")) // running
+	e.PUT("/rooms/:id", UpdateRoom, middleware.RoleAuthMiddleware("admin"))                                     // running
+	e.DELETE("/rooms/:id", DeleteRoom, middleware.RoleAuthMiddleware("admin"))                                  // running
 
 	// route for snacks
-	e.GET("/snacks", GetSnacks, roleAuthMiddleware("admin", "user")) // running
+	e.GET("/snacks", GetSnacks, middleware.RoleAuthMiddleware("admin", "user")) // running
 
 	// route for reservations
-	e.GET("/reservation/calculation", CalculateReservation, roleAuthMiddleware("admin", "user")) // running
-	e.POST("/reservation", CreateReservation, roleAuthMiddleware("admin", "user"))               // running
-	e.GET("/reservation/history", GetReservationHistory, roleAuthMiddleware("user"))             // running
-	e.PUT("/reservation/status", UpdateReservationStatus, roleAuthMiddleware("admin", "user"))   // running
-	e.GET("/reservation/:id", GetReservationByID, roleAuthMiddleware("admin", "user"))           // running
-	e.GET("/reservations/schedules", GetReservationSchedules, roleAuthMiddleware("admin"))       // running
+	e.GET("/reservation/calculation", CalculateReservation, middleware.RoleAuthMiddleware("admin", "user")) // running
+	e.POST("/reservation", CreateReservation, middleware.RoleAuthMiddleware("admin", "user"))               // running
+	e.GET("/reservation/history", GetReservationHistory, middleware.RoleAuthMiddleware("user"))             // running
+	e.PUT("/reservation/status", UpdateReservationStatus, middleware.RoleAuthMiddleware("admin", "user"))   // running
+	e.GET("/reservation/:id", GetReservationByID, middleware.RoleAuthMiddleware("admin", "user"))           // running
+	e.GET("/reservations/schedules", GetReservationSchedules, middleware.RoleAuthMiddleware("admin"))       // running
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
-	e.GET("/dashboard", GetDashboard, roleAuthMiddleware("admin")) // running
+	e.GET("/dashboard", GetDashboard, middleware.RoleAuthMiddleware("admin")) // running
 
 	// route users
-	e.GET("/users/:id", GetUserByID, roleAuthMiddleware("admin", "user"))    //runnning
-	e.PUT("/users/:id", UpdateUserByID, roleAuthMiddleware("admin", "user")) // running
+	e.GET("/users/:id", GetUserByID, middleware.RoleAuthMiddleware("admin", "user"))    //runnning
+	e.PUT("/users/:id", UpdateUserByID, middleware.RoleAuthMiddleware("admin", "user")) // running
 
 	e.Logger.Fatal(e.Start(":8080"))
 
@@ -179,21 +181,6 @@ func migrateDown(db *sql.DB) {
 	}
 
 	fmt.Println("Migrate down successfully")
-}
-
-func ConnectDB(username, password, dbname, host string, port int) *sql.DB {
-	// connect to db
-	connSt := "host=" + host + " port=" + strconv.Itoa(port) + " user=" + username + " password=" + password + " dbname=" + dbname + " sslmode=disable"
-	db, err := sql.Open("postgres", connSt)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = db.Ping()
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Connected to DB " + dbname + " successfully on port" + strconv.Itoa(port))
-	return db
 }
 
 // login godoc
@@ -533,87 +520,6 @@ func PasswordReset(c echo.Context) error {
 	fmt.Println("Password reset requested for email:", resetReq.Email)
 
 	return c.JSON(http.StatusOK, echo.Map{"message": "Update Password Success!", "token": resetToken})
-}
-
-// fungsi middleware untuk login dan verif jwt
-func roleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-
-			// Ambil Authorization Header
-			authHeader := c.Request().Header.Get("Authorization")
-			if authHeader == "" {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
-			}
-
-			if !strings.HasPrefix(authHeader, "Bearer ") {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid Authorization header"})
-			}
-			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-
-			// parsing jwt
-			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-				return JwtSecret, nil
-			})
-
-			if err != nil || !token.Valid {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token"})
-			}
-
-			// ✅ SIMPAN TOKEN KE CONTEXT
-			c.Set("user", token)
-
-			claims, ok := token.Claims.(jwt.MapClaims)
-			if !ok {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Invalid token claims"})
-			}
-
-			fmt.Println("Authenticated user:", claims["username"])
-			fmt.Println("Claims:", claims)
-			fmt.Println("Claims:", claims["role"])
-
-			// Ambil role dari claims
-			var userRoles []string
-
-			// Coba ekstrak sebagai []interface{} (untuk multiple roles)
-			if rolesClaimSlice, ok := claims["role"].([]interface{}); ok {
-				for _, roleInterface := range rolesClaimSlice {
-					if role, ok := roleInterface.(string); ok {
-						userRoles = append(userRoles, role)
-					}
-				}
-			} else if roleClaimString, ok := claims["role"].(string); ok {
-				// Coba ekstrak sebagai string (untuk single role)
-				userRoles = append(userRoles, roleClaimString)
-			} else {
-				// Jika tidak dapat di-parse sebagai slice atau string, print dan kembalikan Unauthorized
-				fmt.Println("Claims[role] tidak dalam format yang diharapkan:", claims["role"])
-				// Cek apakah Anda perlu mengembalikan error di sini jika Anda yakin role HARUS ada
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Role claim missing or invalid format"})
-			}
-
-			// Tambahkan pengecekan jika userRoles kosong setelah ekstraksi
-			if len(userRoles) == 0 {
-				return c.JSON(http.StatusUnauthorized, echo.Map{"error": "No valid roles found in token"})
-			}
-
-			// Cek lagi untuk debug
-			fmt.Println("User Roles yang berhasil diekstrak:", userRoles)
-
-			// cek role sesuai dengan role required
-			for _, requiredRole := range requiredRoles {
-				for _, userRole := range userRoles {
-					if requiredRole == userRole {
-						// lanjurt ke handler kalau cocok
-						return next(c)
-					}
-				}
-			}
-
-			// kalau role ga cocok
-			return c.JSON(http.StatusUnauthorized, echo.Map{"error": "Unauthorized"})
-		}
-	}
 }
 
 // GetUserByID godoc
