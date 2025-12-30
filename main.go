@@ -112,6 +112,10 @@ func main() {
 	roomUsecase := usecases.NewRoomUsecase(roomRepo)
 	roomHandler := handler.NewRoomHandler(roomUsecase)
 
+	snackRepo := repositories.NewSnackRepository(db)
+	snackUsecase := usecases.NewSnackUsecase(snackRepo)
+	snackHandler := handler.NewSnackHandler(snackUsecase)
+
 	// Routes
 
 	// route for swagger
@@ -137,7 +141,7 @@ func main() {
 	e.DELETE("/rooms/:id", roomHandler.DeleteRoom, middleware.RoleAuthMiddleware("admin"))
 
 	// route for snacks
-	e.GET("/snacks", GetSnacks, middleware.RoleAuthMiddleware("admin", "user")) // running
+	e.GET("/snacks", snackHandler.GetSnacks, middleware.RoleAuthMiddleware("admin", "user")) // running
 
 	// route for reservations
 	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, middleware.RoleAuthMiddleware("admin", "user")) // running
@@ -418,40 +422,6 @@ func UploadImage(c echo.Context) error {
 	return c.JSON(http.StatusOK, echo.Map{
 		"message":  "Image uploaded successfully",
 		"imageURL": imageURL,
-	})
-}
-
-// (GET /snacks) - List snack
-// GetSnacks godoc
-// @Summary Get all snacks
-// @Description Get all snacks
-// @Tags Snack
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 500 {object} map[string]string
-// @Security BearerAuth
-// @Router /snacks [get]
-func GetSnacks(c echo.Context) error {
-	rows, err := db.Query(`SELECT id, name, unit, price, category FROM snacks ORDER BY id ASC`)
-	if err != nil {
-		log.Println("DB query error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-	}
-	defer rows.Close()
-
-	var snacks []entities.Snack
-	for rows.Next() {
-		var s entities.Snack
-		if err := rows.Scan(&s.ID, &s.Name, &s.Unit, &s.Price, &s.Category); err != nil {
-			log.Println("Scan error:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-		}
-		snacks = append(snacks, s)
-	}
-
-	return c.JSON(http.StatusOK, echo.Map{
-		"message": "success",
-		"data":    snacks,
 	})
 }
 
