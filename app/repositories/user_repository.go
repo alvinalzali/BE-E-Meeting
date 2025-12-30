@@ -13,6 +13,10 @@ type UserRepository interface {
 	GetByUsername(username string) (entities.GetUser, string, error) // Return GetUser + Hash
 	GetByEmail(email string) (entities.GetUser, string, error)       // Return GetUser + Hash
 	GetByID(id int) (entities.GetUser, error)
+
+	Update(user entities.UpdateUser, id int) error
+	CheckEmailExists(email string, excludeID int) (bool, error)
+	CheckUsernameExists(username string, excludeID int) (bool, error)
 }
 
 // Implementasi sql DB
@@ -106,4 +110,37 @@ func (r *userRepository) GetByID(id int) (entities.GetUser, error) {
 	}
 
 	return user, err
+}
+
+// 5. Update User
+func (r *userRepository) Update(user entities.UpdateUser, id int) error {
+	sqlStatement := `
+        UPDATE users 
+        SET username=$1, email=$2, name=$3, avatar_url=$4, 
+            lang=$5, role=$6, status=$7, updated_at=$8 
+        WHERE id=$9
+    `
+
+	_, err := r.db.Exec(sqlStatement,
+		user.Username, user.Email, user.Name, user.Avatar_url,
+		user.Lang, user.Role, user.Status, user.Updated_at, id,
+	)
+	return err
+}
+
+// 6. Cek Email (Untuk menghindari duplikat saat update)
+func (r *userRepository) CheckEmailExists(email string, excludeID int) (bool, error) {
+	var exists bool
+	// Cek apakah ada email SAMA tapi ID-nya BEDA (punya orang lain)
+	sqlStatement := `SELECT EXISTS(SELECT 1 FROM users WHERE email=$1 AND id<>$2)`
+	err := r.db.QueryRow(sqlStatement, email, excludeID).Scan(&exists)
+	return exists, err
+}
+
+// 7. Cek Username (Untuk menghindari duplikat saat update)
+func (r *userRepository) CheckUsernameExists(username string, excludeID int) (bool, error) {
+	var exists bool
+	sqlStatement := `SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 AND id<>$2)`
+	err := r.db.QueryRow(sqlStatement, username, excludeID).Scan(&exists)
+	return exists, err
 }

@@ -82,6 +82,7 @@ func main() {
 
 	// Skip interactive migration prompt in Docker (use separate migrate service)
 	skipMigration := os.Getenv("SKIP_MIGRATION")
+	skipMigration = strings.ToLower(skipMigration)
 	if skipMigration != "true" {
 		//berikan inputan switch 1 untuk migrate up lalu kembali ke menu, 2 untuk migrate down, 3 untuk continue
 		fmt.Println("Enter 1 for migrate up, 2 for migrate down, 3 for continue:")
@@ -104,12 +105,12 @@ func main() {
 	// depedency injection
 	// init repository
 	userRepo := repositories.NewUserRepository(db)
-
-	// init usecase
 	userUsecase := usecases.NewUserUsecase(userRepo)
-
-	// init handler
 	userHandler := handler.NewUserHandler(userUsecase)
+
+	roomRepo := repositories.NewRoomRepository(db)
+	roomUsecase := usecases.NewRoomUsecase(roomRepo)
+	roomHandler := handler.NewRoomHandler(roomUsecase)
 
 	// Routes
 
@@ -129,30 +130,30 @@ func main() {
 	e.POST("/uploads", UploadImage, middleware.RoleAuthMiddleware("admin", "user")) //runnning
 
 	// route for rooms
-	e.POST("/rooms", CreateRoom, middleware.RoleAuthMiddleware("admin"))                                        // running
-	e.GET("/rooms", GetRooms, middleware.RoleAuthMiddleware("admin", "user"))                                   // running
-	e.GET("/rooms/:id", GetRoomByID, middleware.RoleAuthMiddleware("admin", "user"))                            // running
-	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, middleware.RoleAuthMiddleware("admin", "user")) // running
-	e.PUT("/rooms/:id", UpdateRoom, middleware.RoleAuthMiddleware("admin"))                                     // running
-	e.DELETE("/rooms/:id", DeleteRoom, middleware.RoleAuthMiddleware("admin"))                                  // running
+	e.POST("/rooms", roomHandler.CreateRoom, middleware.RoleAuthMiddleware("admin"))
+	e.GET("/rooms", roomHandler.GetRooms, middleware.RoleAuthMiddleware("admin", "user"))
+	e.GET("/rooms/:id", roomHandler.GetRoomByID, middleware.RoleAuthMiddleware("admin", "user"))
+	e.PUT("/rooms/:id", roomHandler.UpdateRoom, middleware.RoleAuthMiddleware("admin"))
+	e.DELETE("/rooms/:id", roomHandler.DeleteRoom, middleware.RoleAuthMiddleware("admin"))
 
 	// route for snacks
 	e.GET("/snacks", GetSnacks, middleware.RoleAuthMiddleware("admin", "user")) // running
 
 	// route for reservations
-	e.GET("/reservation/calculation", CalculateReservation, middleware.RoleAuthMiddleware("admin", "user")) // running
-	e.POST("/reservation", CreateReservation, middleware.RoleAuthMiddleware("admin", "user"))               // running
-	e.GET("/reservation/history", GetReservationHistory, middleware.RoleAuthMiddleware("user"))             // running
-	e.PUT("/reservation/status", UpdateReservationStatus, middleware.RoleAuthMiddleware("admin", "user"))   // running
-	e.GET("/reservation/:id", GetReservationByID, middleware.RoleAuthMiddleware("admin", "user"))           // running
-	e.GET("/reservations/schedules", GetReservationSchedules, middleware.RoleAuthMiddleware("admin"))       // running
+	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, middleware.RoleAuthMiddleware("admin", "user")) // running
+	e.GET("/reservation/calculation", CalculateReservation, middleware.RoleAuthMiddleware("admin", "user"))     // running
+	e.POST("/reservation", CreateReservation, middleware.RoleAuthMiddleware("admin", "user"))                   // running
+	e.GET("/reservation/history", GetReservationHistory, middleware.RoleAuthMiddleware("user"))                 // running
+	e.PUT("/reservation/status", UpdateReservationStatus, middleware.RoleAuthMiddleware("admin", "user"))       // running
+	e.GET("/reservation/:id", GetReservationByID, middleware.RoleAuthMiddleware("admin", "user"))               // running
+	e.GET("/reservations/schedules", GetReservationSchedules, middleware.RoleAuthMiddleware("admin"))           // running
 
 	// dashboard dan users group tetap menggunakan middlewareAuth
 	e.GET("/dashboard", GetDashboard, middleware.RoleAuthMiddleware("admin")) // running
 
 	// route users
 	e.GET("/users/:id", userHandler.GetProfile, middleware.RoleAuthMiddleware("admin", "user")) //runnning
-	e.PUT("/users/:id", UpdateUserByID, middleware.RoleAuthMiddleware("admin", "user"))         // running
+	e.PUT("/users/:id", userHandler.UpdateUser, middleware.RoleAuthMiddleware("admin", "user")) // running
 
 	e.Logger.Fatal(e.Start(":8080"))
 
@@ -358,126 +359,6 @@ func PasswordReset(c echo.Context) error {
 	return c.JSON(http.StatusOK, echo.Map{"message": "Update Password Success!", "token": resetToken})
 }
 
-// buat fungsi UpdateUserByID dengan request dan response sesuai updateUser struct
-// UpdateUserByID godoc
-// @Summary Update user by ID
-// @Description Update user details by user ID
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param id path string true "User ID"
-// @Param user body entities.UpdateUser true "User object"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Security     BearerAuth
-// @Router /users/{id} [put]
-func UpdateUserByID(c echo.Context) error {
-	id := c.Param("id")
-	idInt, err := strconv.Atoi(id)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
-	}
-
-	// ambil jwt dari auth header
-	userToken := c.Get("user").(*jwt.Token)
-	claims := userToken.Claims.(jwt.MapClaims)
-
-	// ambil username dari jwt
-	usernameFromToken := claims["username"].(string)
-
-	// ambil username dari db berdasarkan id
-	var usernameFromDB string
-	err = db.QueryRow("SELECT username FROM users WHERE id = $1", idInt).Scan(&usernameFromDB)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-
-	// bandingkan jwt dan db
-	if usernameFromToken != usernameFromDB {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-
-	var user entities.UpdateUser
-	if err := c.Bind(&user); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request body"})
-	}
-
-	user.Updated_at = time.Now().Format(time.RFC3339)
-
-	// --- Ambil data user saat ini ---
-	var currentUser entities.UpdateUser
-	query := `SELECT username, email, avatar_url FROM users WHERE id=$1`
-	err = db.QueryRow(query, idInt).Scan(&currentUser.Username, &currentUser.Email, &currentUser.Avatar_url)
-	if err != nil {
-		log.Println("Error fetching current user:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "User not found"})
-	}
-
-	// === Cek Username ===
-	if user.Username != "" && user.Username != currentUser.Username {
-		var exists bool
-		err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 AND id<>$2)`, user.Username, idInt).Scan(&exists)
-		if err != nil {
-			log.Println("Error checking username:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database check failed"})
-		}
-		if exists {
-			log.Println("Username already taken, keeping old username.")
-			user.Username = currentUser.Username
-		}
-	} else {
-		user.Username = currentUser.Username
-	}
-
-	// === Cek Email ===
-	if user.Email != "" && user.Email != currentUser.Email {
-		var exists bool
-		err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM users WHERE email=$1 AND id<>$2)`, user.Email, idInt).Scan(&exists)
-		if err != nil {
-			log.Println("Error checking email:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database check failed"})
-		}
-		if exists {
-			log.Println("Email already taken, keeping old email.")
-			user.Email = currentUser.Email
-		}
-	} else {
-		user.Email = currentUser.Email
-	}
-
-	// === Jika ada avatar baru ===
-	// cek jika Avatar_url kosong atau default
-	avatarResult, err := handler.HandleAvatarUpdate(c, idInt, currentUser.Avatar_url, user.Avatar_url)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Avatar update failed"})
-	}
-
-	user.Avatar_url = avatarResult
-
-	// --- Update user ---
-	sqlStatement := `
-		UPDATE users 
-		SET username=$1, email=$2, name=$3, avatar_url=$4, 
-			lang=$5, role=$6, status=$7, updated_at=$8 
-		WHERE id=$9
-	`
-	_, err = db.Exec(sqlStatement,
-		user.Username, user.Email, user.Name, user.Avatar_url,
-		user.Lang, user.Role, user.Status, user.Updated_at, idInt,
-	)
-	if err != nil {
-		log.Println("Error updating user:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Database error"})
-	}
-
-	return c.JSON(http.StatusOK, echo.Map{
-		"message": "User updated successfully",
-		"data":    user,
-	})
-}
-
 // fungsi memasukan gambar ke folder temp dan mengembalikan url gambarnya
 // UploadImage godoc
 // @Summary Save an image
@@ -538,338 +419,6 @@ func UploadImage(c echo.Context) error {
 		"message":  "Image uploaded successfully",
 		"imageURL": imageURL,
 	})
-}
-
-// (POST /rooms) - Tambah ruangan baru
-// CreateRoom godoc
-// @Summary Create a new room
-// @Description Create a new room with image validation (JPG/PNG ≤1MB)
-// @Tags Room
-// @Accept multipart/form-data
-// @Produce json
-// @Param name formData string true "Room name"
-// @Param type formData string true "Room type (small/medium/large)"
-// @Param capacity formData int true "Room capacity"
-// @Param pricePerHour formData number true "Price per hour"
-// @Param image formData file true "Room image (JPG/PNG ≤1MB)"
-
-// @Success 201 {object} map[string]string
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Security BearerAuth
-// @Router /rooms [post]
-func CreateRoom(c echo.Context) error {
-	var req entities.RoomRequest
-
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
-	}
-
-	if req.Name == "" || req.Type == "" || req.Capacity <= 0 || req.PricePerHour <= 0 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room data"})
-	}
-
-	var roomImage string
-	var err error
-
-	// proses avatar room
-	roomImage, err = handler.HandleRoomImageCreate(c, req.ImageURL, DefaultRoomURL)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{
-			"message": "failed processing room image",
-		})
-	}
-
-	req.ImageURL = roomImage
-
-	// Insert into DB
-	query := `
-        INSERT INTO rooms (name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-    `
-	_, err = db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-	}
-
-	return c.JSON(http.StatusCreated, echo.Map{
-		"message":  "room created successfully",
-		"imageURL": req.ImageURL,
-	})
-}
-
-// (GET /rooms) - List ruangan
-// GetRooms godoc
-// @Summary Get a list of rooms
-// @Description Get a list of rooms
-// @Tags Room
-// @Produce json
-// @Param name query string false "Room name"
-// @Param type query string false "Room type"
-// @Param capacity query string false "Room capacity"
-// @Param page query int false "Page number"
-// @Param pageSize query int false "Page size"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Security BearerAuth
-// @Router /rooms [get]
-func GetRooms(c echo.Context) error {
-	name := c.QueryParam("name")
-	roomType := c.QueryParam("type")
-	capacityParam := c.QueryParam("capacity")
-	pageParam := c.QueryParam("page")
-	pageSizeParam := c.QueryParam("pageSize")
-
-	// validasi tipe ruangan
-	if roomType != "" && roomType != "small" && roomType != "medium" && roomType != "large" {
-		return c.JSON(http.StatusBadRequest, echo.Map{"message": "room type is not valid"})
-	}
-
-	page := 1
-	pageSize := 10
-	if p, err := strconv.Atoi(pageParam); err == nil && p > 0 {
-		page = p
-	}
-	if ps, err := strconv.Atoi(pageSizeParam); err == nil && ps > 0 {
-		pageSize = ps
-	}
-	offset := (page - 1) * pageSize
-
-	query := `
-        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
-        FROM rooms
-        WHERE 1=1
-    `
-	var args []interface{}
-	argIndex := 1
-
-	if name != "" {
-		query += fmt.Sprintf(" AND LOWER(name) LIKE LOWER($%d)", argIndex)
-		args = append(args, "%"+name+"%")
-		argIndex++
-	}
-	if roomType != "" {
-		query += fmt.Sprintf(" AND room_type = $%d", argIndex)
-		args = append(args, roomType)
-		argIndex++
-	}
-	if capacityParam != "" {
-		if capVal, err := strconv.Atoi(capacityParam); err == nil {
-			query += fmt.Sprintf(" AND capacity >= $%d", argIndex)
-			args = append(args, capVal)
-			argIndex++
-		}
-	}
-
-	countQuery := "SELECT COUNT(*) FROM (" + query + ") AS total"
-	var totalData int
-	err := db.QueryRow(countQuery, args...).Scan(&totalData)
-	if err != nil {
-		log.Println("Count query error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-	}
-
-	query += fmt.Sprintf(" ORDER BY id ASC LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
-	args = append(args, pageSize, offset)
-
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		log.Println("GetRooms query error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-	}
-	defer rows.Close()
-
-	var rooms []entities.Room
-	for rows.Next() {
-		var r entities.Room
-		var createdAt sql.NullTime
-		var updatedAt sql.NullTime
-		if err := rows.Scan(&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour, &r.PictureURL, &createdAt, &updatedAt); err != nil {
-			log.Println("GetRooms scan error:", err)
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-		}
-		if createdAt.Valid {
-			r.CreatedAt = createdAt.Time
-		} else {
-			r.CreatedAt = time.Time{}
-		}
-		if updatedAt.Valid {
-			r.UpdatedAt = updatedAt.Time
-		} else {
-			r.UpdatedAt = time.Time{}
-		}
-		rooms = append(rooms, r)
-	}
-
-	totalPage := (totalData + pageSize - 1) / pageSize
-	return c.JSON(http.StatusOK, echo.Map{
-		"message":   "success",
-		"data":      rooms,
-		"page":      page,
-		"pageSize":  pageSize,
-		"totalPage": totalPage,
-		"totalData": totalData,
-	})
-}
-
-// (GET /rooms/:id) - Detail ruangan
-// GetRoomByID godoc
-// @Summary Get a room by ID
-// @Description Get a room by ID
-// @Tags Room
-// @Produce json
-// @Param id path string true "Room ID"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Security BearerAuth
-// @Router /rooms/{id} [get]
-func GetRoomByID(c echo.Context) error {
-	idParam := c.Param("id")
-	id, err := strconv.Atoi(idParam)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
-	}
-
-	query := `
-        SELECT id, name, room_type, capacity, price_per_hour, picture_url, created_at, updated_at
-        FROM rooms WHERE id = $1
-    `
-	var r entities.Room
-	var createdAt sql.NullTime
-	var updatedAt sql.NullTime
-	err = db.QueryRow(query, id).Scan(
-		&r.ID, &r.Name, &r.RoomType, &r.Capacity, &r.PricePerHour,
-		&r.PictureURL, &createdAt, &updatedAt,
-	)
-	if createdAt.Valid {
-		r.CreatedAt = createdAt.Time
-	} else {
-		r.CreatedAt = time.Time{}
-	}
-	if updatedAt.Valid {
-		r.UpdatedAt = updatedAt.Time
-	} else {
-		r.UpdatedAt = time.Time{}
-	}
-
-	if err == sql.ErrNoRows {
-		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
-	} else if err != nil {
-		log.Println("GetRoomByID DB error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-	}
-
-	return c.JSON(http.StatusOK, echo.Map{
-		"message": "success",
-		"data":    r,
-	})
-}
-
-// (PUT /rooms/:id) - Update ruangan
-// UpdateRoom godoc
-// @Summary Update a room by ID
-// @Description Update a room by ID
-// @Tags Room
-// @Accept json
-// @Produce json
-// @Param id path string true "Room ID"
-// @Param room body entities.RoomRequest true "Room details"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Security BearerAuth
-// @Router /rooms/{id} [put]
-func UpdateRoom(c echo.Context) error {
-	idParam := c.Param("id")
-	id, err := strconv.Atoi(idParam)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
-	}
-
-	var req entities.RoomRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
-	}
-
-	if req.Type != "small" && req.Type != "medium" && req.Type != "large" || req.Capacity <= 0 {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "room type is not valid / capacity must be larger more than 0",
-		})
-	}
-
-	if req.PricePerHour <= 0 {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"message": "price per hour must be larger more than 0",
-		})
-	}
-
-	if req.ImageURL != "" {
-		// proses avatar room
-		roomImage, err := handler.HandleRoomImageCreate(c, req.ImageURL, DefaultRoomURL)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{
-				"message": "failed processing room image",
-			})
-		}
-		req.ImageURL = roomImage
-	}
-
-	query := `
-        UPDATE rooms 
-        SET name=$1, room_type=$2, capacity=$3, price_per_hour=$4, picture_url=$5, updated_at=NOW()
-        WHERE id=$6
-    `
-	res, err := db.Exec(query, req.Name, req.Type, req.Capacity, req.PricePerHour, req.ImageURL, id)
-	if err != nil {
-		log.Println("UpdateRoom DB error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-	}
-
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
-		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
-	}
-
-	return c.JSON(http.StatusOK, echo.Map{"message": "room updated successfully"})
-}
-
-// (DELETE /rooms/:id) - Hapus ruangan
-// DeleteRoom godoc
-// @Summary Delete a room by ID
-// @Description Delete a room by ID
-// @Tags Room
-// @Produce json
-// @Param id path string true "Room ID"
-// @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} map[string]string
-// @Failure 404 {object} map[string]string
-// @Failure 500 {object} map[string]string
-// @Security BearerAuth
-// @Router /rooms/{id} [delete]
-func DeleteRoom(c echo.Context) error {
-	idParam := c.Param("id")
-	id, err := strconv.Atoi(idParam)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid room id"})
-	}
-
-	query := `DELETE FROM rooms WHERE id=$1`
-	res, err := db.Exec(query, id)
-	if err != nil {
-		log.Println("DeleteRoom DB error:", err)
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "internal server error"})
-	}
-
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
-		return c.JSON(http.StatusNotFound, echo.Map{"message": "room not found"})
-	}
-
-	return c.JSON(http.StatusOK, echo.Map{"message": "delete room success"})
 }
 
 // (GET /snacks) - List snack

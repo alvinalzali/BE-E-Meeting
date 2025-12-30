@@ -16,6 +16,7 @@ type UserUsecase interface {
 	Register(user entities.User) error
 	Login(username string, password string) (string, string, string, error) // return: accessToken, refreshToken, userID
 	GetProfile(id int) (entities.GetUser, error)
+	UpdateUser(id int, input entities.UpdateUser) (entities.UpdateUser, error)
 }
 
 type userUsecase struct {
@@ -101,6 +102,71 @@ func (u *userUsecase) GetProfile(id int) (entities.GetUser, error) {
 	}
 
 	return user, nil
+}
+
+func (u *userUsecase) UpdateUser(id int, input entities.UpdateUser) (entities.UpdateUser, error) {
+	// 1. Ambil data user lama dulu (untuk perbandingan)
+	oldUser, err := u.userRepo.GetByID(id)
+	if err != nil {
+		return input, errors.New("user not found")
+	}
+
+	// 2. Isi data kosong dengan data lama (agar tidak tertimpa string kosong)
+	if input.Username == "" {
+		input.Username = oldUser.Username
+	}
+	if input.Email == "" {
+		input.Email = oldUser.Email
+	}
+	if input.Name == "" {
+		input.Name = oldUser.Name
+	}
+	if input.Avatar_url == "" {
+		input.Avatar_url = oldUser.Avatar_url
+	}
+	if input.Lang == "" {
+		input.Lang = oldUser.Lang
+	}
+	if input.Role == "" {
+		input.Role = oldUser.Role
+	}
+	if input.Status == "" {
+		input.Status = oldUser.Status
+	}
+
+	// Set waktu update
+	input.Updated_at = time.Now().Format(time.RFC3339)
+
+	// 3. Cek Uniqueness Username (Jika username berubah)
+	if input.Username != oldUser.Username {
+		exists, err := u.userRepo.CheckUsernameExists(input.Username, id)
+		if err != nil {
+			return input, err
+		}
+		if exists {
+			// Jika sudah ada, kembalikan ke username lama (atau bisa return error)
+			input.Username = oldUser.Username
+		}
+	}
+
+	// 4. Cek Uniqueness Email (Jika email berubah)
+	if input.Email != oldUser.Email {
+		exists, err := u.userRepo.CheckEmailExists(input.Email, id)
+		if err != nil {
+			return input, err
+		}
+		if exists {
+			input.Email = oldUser.Email
+		}
+	}
+
+	// 5. Simpan ke Database
+	err = u.userRepo.Update(input, id)
+	if err != nil {
+		return input, err
+	}
+
+	return input, nil
 }
 
 // ==========================================

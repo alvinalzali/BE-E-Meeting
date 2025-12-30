@@ -136,3 +136,56 @@ func (h *UserHandler) GetProfile(c echo.Context) error {
 		"message": "User retrieved successfully",
 	})
 }
+
+// UpdateUser godoc
+// @Summary Update user by ID
+// @Description Update user details by user ID
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param user body entities.UpdateUser true "User object"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security BearerAuth
+// @Router /users/{id} [put]
+func (h *UserHandler) UpdateUser(c echo.Context) error {
+	// 1. Ambil ID dari param
+	idParam := c.Param("id")
+	id, err := strconv.Atoi(idParam)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
+	}
+
+	// 2. Authorization (Cek Token vs ID)
+	userToken := c.Get("user").(*jwt.Token)
+	claims := userToken.Claims.(jwt.MapClaims)
+	usernameFromToken := claims["username"].(string)
+
+	// (Opsional) Ambil data user dulu buat cek kepemilikan
+	currentUser, err := h.usecase.GetProfile(id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "User not found"})
+	}
+	if currentUser.Username != usernameFromToken {
+		return c.JSON(http.StatusForbidden, echo.Map{"error": "Unauthorized update"})
+	}
+
+	// 3. Bind Input
+	var input entities.UpdateUser
+	if err := c.Bind(&input); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid input"})
+	}
+
+	// 4. Panggil Usecase
+	updatedUser, err := h.usecase.UpdateUser(id, input)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "User updated successfully",
+		"data":    updatedUser,
+	})
+}
