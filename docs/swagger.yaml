@@ -10,15 +10,98 @@ definitions:
     - password
     - username
     type: object
-  entities.PasswordConfirmReset:
+  entities.PersonalData:
     properties:
-      confirm_password:
+      company:
         type: string
-      new_password:
+      name:
         type: string
-    required:
-    - confirm_password
-    - new_password
+      phoneNumber:
+        type: string
+    type: object
+  entities.ReservationByIDData:
+    properties:
+      personalData:
+        $ref: '#/definitions/entities.PersonalData'
+      rooms:
+        items:
+          $ref: '#/definitions/entities.RoomInfo'
+        type: array
+      status:
+        type: string
+      subTotalRoom:
+        type: number
+      subTotalSnack:
+        type: number
+      total:
+        type: number
+    type: object
+  entities.ReservationByIDResponse:
+    properties:
+      data:
+        $ref: '#/definitions/entities.ReservationByIDData'
+      message:
+        type: string
+    type: object
+  entities.ReservationHistoryData:
+    properties:
+      company:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      phoneNumber:
+        type: string
+      rooms:
+        items:
+          $ref: '#/definitions/entities.ReservationHistoryRoomDetail'
+        type: array
+      status:
+        type: string
+      subTotalRoom:
+        type: number
+      subTotalSnack:
+        type: number
+      total:
+        type: number
+      updatedAt:
+        description: <--- Ganti jadi Pointer Time
+        type: string
+    type: object
+  entities.ReservationHistoryResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/entities.ReservationHistoryData'
+        type: array
+      message:
+        type: string
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      totalData:
+        type: integer
+      totalPage:
+        type: integer
+    type: object
+  entities.ReservationHistoryRoomDetail:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      price:
+        type: number
+      totalRoom:
+        type: number
+      totalSnack:
+        type: number
+      type:
+        type: string
     type: object
   entities.ReservationRequestBody:
     properties:
@@ -43,12 +126,32 @@ definitions:
       userID:
         type: integer
     type: object
-  entities.ResetRequest:
+  entities.RoomInfo:
     properties:
-      email:
+      capacity:
+        type: integer
+      duration:
+        type: integer
+      endTime:
         type: string
-    required:
-    - email
+      imageURL:
+        type: string
+      name:
+        type: string
+      participant:
+        type: integer
+      pricePerHour:
+        type: number
+      snack:
+        $ref: '#/definitions/entities.Snack'
+      startTime:
+        type: string
+      totalRoom:
+        type: number
+      totalSnack:
+        type: number
+      type:
+        type: string
     type: object
   entities.RoomRequest:
     properties:
@@ -79,6 +182,58 @@ definitions:
       snackID:
         type: integer
       startTime:
+        type: string
+    type: object
+  entities.RoomScheduleInfo:
+    properties:
+      companyName:
+        type: string
+      id:
+        type: string
+      roomName:
+        type: string
+      schedules:
+        items:
+          $ref: '#/definitions/entities.Schedule'
+        type: array
+    type: object
+  entities.Schedule:
+    properties:
+      endTime:
+        type: string
+      startTime:
+        type: string
+      status:
+        type: string
+    type: object
+  entities.ScheduleResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/entities.RoomScheduleInfo'
+        type: array
+      message:
+        type: string
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      totalData:
+        type: integer
+      totalPage:
+        type: integer
+    type: object
+  entities.Snack:
+    properties:
+      category:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      price:
+        type: number
+      unit:
         type: string
     type: object
   entities.UpdateReservationRequest:
@@ -147,99 +302,6 @@ info:
   title: E-Meeting API
   version: "1.0"
 paths:
-  /dashboard:
-    get:
-      consumes:
-      - application/json
-      description: Get analytics data for paid transactions within date range
-      parameters:
-      - description: Start date (YYYY-MM-DD)
-        in: query
-        name: startDate
-        required: true
-        type: string
-      - description: End date (YYYY-MM-DD)
-        in: query
-        name: endDate
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Get dashboard analytics
-      tags:
-      - Dashboard
-  /history:
-    get:
-      description: Retrieve meeting reservation history filtered by user_id, room_id,
-        or date.
-      parameters:
-      - description: User ID
-        in: query
-        name: user_id
-        type: string
-      - description: Room ID
-        in: query
-        name: room_id
-        type: string
-      - description: Date (YYYY-MM-DD)
-        in: query
-        name: date
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: History retrieved successfully
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Invalid query parameter
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Failed to retrieve history
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Get meeting reservation history
-      tags:
-      - Reservation
   /login:
     post:
       consumes:
@@ -281,85 +343,6 @@ paths:
       summary: Login user
       tags:
       - Auth
-  /password/reset:
-    post:
-      consumes:
-      - application/json
-      description: Request a password reset token to be sent to the user's email
-      parameters:
-      - description: User object
-        in: body
-        name: user
-        required: true
-        schema:
-          $ref: '#/definitions/entities.ResetRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Request password reset
-      tags:
-      - User
-  /password/reset/{id}:
-    put:
-      consumes:
-      - application/json
-      description: Reset user password using a valid reset token
-      parameters:
-      - description: Reset Token
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: User object
-        in: body
-        name: user
-        required: true
-        schema:
-          $ref: '#/definitions/entities.PasswordConfirmReset'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - ApiKeyAuth: []
-      summary: Reset user password
-      tags:
-      - User
   /register:
     post:
       consumes:
@@ -399,7 +382,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new reservation
+      description: Create a new reservation transaction
       parameters:
       - description: Reservation request body
         in: body
@@ -448,34 +431,9 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: Forbidden
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/entities.ReservationByIDResponse'
         "404":
           description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
           schema:
             additionalProperties:
               type: string
@@ -487,73 +445,76 @@ paths:
       - Reservation
   /reservation/calculation:
     get:
-      description: Calculate reservation
+      description: Calculate reservation price details
       parameters:
       - description: Room ID
         in: query
         name: room_id
         required: true
         type: string
-      - description: Snack ID
+      - description: Snack ID (0 if none)
         in: query
         name: snack_id
         required: true
         type: string
-      - description: Start Time
+      - description: Start Time (RFC3339)
         in: query
         name: startTime
         required: true
         type: string
-      - description: End Time
+      - description: End Time (RFC3339)
         in: query
         name: endTime
         required: true
         type: string
-      - description: Participant
+      - description: Participant Count
         in: query
         name: participant
         required: true
         type: string
-      - description: User ID
+      produces:
+      - application/json
+      responses: {}
+      security:
+      - BearerAuth: []
+      summary: Calculate reservation
+      tags:
+      - Reservation
+  /reservation/history:
+    get:
+      description: Retrieve meeting reservation history filtered by filters
+      parameters:
+      - description: Start Date (YYYY-MM-DD)
         in: query
-        name: user_id
-        required: true
+        name: startDate
         type: string
-      - description: Name
+      - description: End Date (YYYY-MM-DD)
         in: query
-        name: name
-        required: true
+        name: endDate
         type: string
-      - description: Phone Number
+      - description: Room Type (small/medium/large)
         in: query
-        name: phoneNumber
-        required: true
+        name: type
         type: string
-      - description: Company
+      - description: Status (booked/paid/cancel)
         in: query
-        name: company
-        required: true
+        name: status
         type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: pageSize
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/entities.ReservationHistoryResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -562,14 +523,14 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: Calculate reservation
+      summary: Get meeting reservation history
       tags:
       - Reservation
   /reservation/status:
     put:
       consumes:
       - application/json
-      description: Update status of a reservation (booked/canceled/paid)
+      description: Update status of a reservation (booked/cancel/paid)
       parameters:
       - description: Reservation details
         in: body
@@ -581,31 +542,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: 'message: update status success'
+          description: OK
           schema:
             additionalProperties:
               type: string
             type: object
         "400":
-          description: 'message: bad request/reservation already canceled/paid'
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: 'message: unauthorized'
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: 'message: url not found'
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: 'message: internal server error'
+          description: Bad Request
           schema:
             additionalProperties:
               type: string
@@ -645,20 +588,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/entities.ScheduleResponse'
       security:
       - BearerAuth: []
       summary: Get reservation schedules
@@ -714,6 +644,37 @@ paths:
       tags:
       - Room
     post:
+      consumes:
+      - multipart/form-data
+      description: Create a new room with image validation (JPG/PNG ≤1MB)
+      parameters:
+      - description: Room name
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Room type (small/medium/large)
+        in: formData
+        name: type
+        required: true
+        type: string
+      - description: Room capacity
+        in: formData
+        name: capacity
+        required: true
+        type: integer
+      - description: Price per hour
+        in: formData
+        name: pricePerHour
+        required: true
+        type: number
+      - description: Room image (JPG/PNG ≤1MB)
+        in: formData
+        name: image
+        required: true
+        type: file
+      produces:
+      - application/json
       responses:
         "201":
           description: Created
@@ -735,6 +696,9 @@ paths:
             type: object
       security:
       - BearerAuth: []
+      summary: Create a new room
+      tags:
+      - Room
   /rooms/{id}:
     delete:
       description: Delete a room by ID
@@ -861,86 +825,6 @@ paths:
       summary: Update a room by ID
       tags:
       - Room
-  /rooms/{id}/reservation:
-    get:
-      description: Get all reservations for a specific room
-      parameters:
-      - description: Room ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Date filter (YYYY-MM-DD)
-        in: query
-        name: date
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Get room reservation schedule
-      tags:
-      - Room
-  /save-image:
-    post:
-      consumes:
-      - multipart/form-data
-      description: Upload an image to temp folder and return its URL
-      parameters:
-      - description: Image file
-        in: formData
-        name: image
-        required: true
-        type: file
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Save an image
-      tags:
-      - Image
   /snacks:
     get:
       description: Get all snacks
@@ -1035,12 +919,6 @@ paths:
             additionalProperties:
               type: string
             type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
         "500":
           description: Internal Server Error
           schema:
@@ -1054,7 +932,6 @@ paths:
       - User
 securityDefinitions:
   BearerAuth:
-    description: Type "Bearer" followed by a space and JWT token.
     in: header
     name: Authorization
     type: apiKey

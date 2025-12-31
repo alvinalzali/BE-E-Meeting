@@ -7,6 +7,7 @@ import (
 
 type SnackRepository interface {
 	GetAll() ([]entities.Snack, error)
+	GetByID(id int) (entities.Snack, error)
 }
 
 type snackRepository struct {
@@ -33,4 +34,10 @@ func (r *snackRepository) GetAll() ([]entities.Snack, error) {
 		snacks = append(snacks, s)
 	}
 	return snacks, nil
+}
+
+func (r *snackRepository) GetByID(id int) (entities.Snack, error) {
+	var s entities.Snack
+	err := r.db.QueryRow("SELECT id, name, unit, price, category FROM snacks WHERE id=$1", id).Scan(&s.ID, &s.Name, &s.Unit, &s.Price, &s.Category)
+	return s, err
 }

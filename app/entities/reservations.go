@@ -1,7 +1,6 @@
 package entities
 
 import (
-	"database/sql"
 	"time"
 )
 
@@ -94,7 +93,7 @@ type ReservationHistoryData struct {
 	Total         float64                        `json:"total"`
 	Status        string                         `json:"status"`
 	CreatedAt     time.Time                      `json:"createdAt"`
-	UpdatedAt     sql.NullTime                   `json:"updatedAt"`
+	UpdatedAt     *time.Time                     `json:"updatedAt"` // <--- Ganti jadi Pointer Time
 	Rooms         []ReservationHistoryRoomDetail `json:"rooms"`
 }
 
@@ -126,4 +125,37 @@ type ReservationByIDData struct {
 type ReservationByIDResponse struct {
 	Message string              `json:"message"`
 	Data    ReservationByIDData `json:"data"`
+}
+
+// Struct ini mewakili baris data di tabel 'reservations'
+type ReservationData struct {
+	UserID            int
+	ContactName       string
+	ContactPhone      string
+	ContactCompany    string
+	Note              string
+	StatusReservation string
+	SubTotalRoom      float64
+	SubTotalSnack     float64
+	Total             float64
+	DurationMinute    int
+	TotalParticipants int
+	AddSnack          bool
+}
+
+// Struct ini mewakili baris data di tabel 'reservation_details'
+type ReservationDetailData struct {
+	ReservationID     int
+	RoomID            int
+	RoomName          string
+	RoomPrice         float64
+	SnackID           int
+	SnackName         string
+	SnackPrice        float64
+	DurationMinute    int
+	TotalParticipants int
+	TotalRoom         float64
+	TotalSnack        float64
+	StartAt           time.Time
+	EndAt             time.Time
 }
