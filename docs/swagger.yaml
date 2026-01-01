@@ -1,4 +1,39 @@
 definitions:
+  entities.DashboardData:
+    properties:
+      rooms:
+        items:
+          $ref: '#/definitions/entities.DashboardRoom'
+        type: array
+      totalOmzet:
+        type: number
+      totalReservation:
+        type: integer
+      totalRoom:
+        type: integer
+      totalVisitor:
+        type: integer
+    type: object
+  entities.DashboardResponse:
+    properties:
+      data:
+        allOf:
+        - $ref: '#/definitions/entities.DashboardData'
+        description: Menggunakan struct bernama
+      message:
+        type: string
+    type: object
+  entities.DashboardRoom:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      omzet:
+        type: number
+      percentageOfUsage:
+        type: number
+    type: object
   entities.Login:
     properties:
       password:
@@ -302,6 +337,50 @@ info:
   title: E-Meeting API
   version: "1.0"
 paths:
+  /dashboard:
+    get:
+      consumes:
+      - application/json
+      description: Get analytics data for paid transactions within date range
+      parameters:
+      - description: Start date (YYYY-MM-DD)
+        in: query
+        name: startDate
+        type: string
+      - description: End date (YYYY-MM-DD)
+        in: query
+        name: endDate
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/entities.DashboardResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get dashboard analytics
+      tags:
+      - Dashboard
   /login:
     post:
       consumes:

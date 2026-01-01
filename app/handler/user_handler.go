@@ -189,3 +189,60 @@ func (h *UserHandler) UpdateUser(c echo.Context) error {
 		"data":    updatedUser,
 	})
 }
+
+// RequestPasswordReset godoc
+// @Summary Request password reset
+// @Description Request a password reset token to be sent to the user's email
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param user body entities.ResetRequest true "Email data"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /password/reset [post]
+func (h *UserHandler) RequestPasswordReset(c echo.Context) error {
+	var req entities.ResetRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid format"})
+	}
+
+	// Panggil Usecase
+	token, err := h.usecase.RequestPasswordReset(req.Email)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "Update Password Success!",
+		"token":   token,
+	})
+}
+
+// ResetPassword godoc
+// @Summary Reset user password
+// @Description Reset user password using a valid reset token
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param id path string true "Reset Token (JWT)"
+// @Param user body entities.PasswordConfirmReset true "Password data"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Router /password/reset/{id} [put]
+func (h *UserHandler) ResetPassword(c echo.Context) error {
+	// Di sini 'id' parameter sebenarnya adalah Token JWT
+	token := c.Param("id")
+
+	var req entities.PasswordConfirmReset
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid format"})
+	}
+
+	err := h.usecase.ResetPassword(token, req.NewPassword, req.ConfirmPassword)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "Password reset successfully"})
+}

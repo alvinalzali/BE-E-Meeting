@@ -8,6 +8,75 @@
         "version": "1.0"
     },
     "paths": {
+        "/dashboard": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get analytics data for paid transactions within date range",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Dashboard"
+                ],
+                "summary": "Get dashboard analytics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "startDate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "endDate",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/entities.DashboardResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "post": {
                 "description": "Login user",
@@ -977,6 +1046,62 @@
         }
     },
     "definitions": {
+        "entities.DashboardData": {
+            "type": "object",
+            "properties": {
+                "rooms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/entities.DashboardRoom"
+                    }
+                },
+                "totalOmzet": {
+                    "type": "number"
+                },
+                "totalReservation": {
+                    "type": "integer"
+                },
+                "totalRoom": {
+                    "type": "integer"
+                },
+                "totalVisitor": {
+                    "type": "integer"
+                }
+            }
+        },
+        "entities.DashboardResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "description": "Menggunakan struct bernama",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/entities.DashboardData"
+                        }
+                    ]
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "entities.DashboardRoom": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "omzet": {
+                    "type": "number"
+                },
+                "percentageOfUsage": {
+                    "type": "number"
+                }
+            }
+        },
         "entities.Login": {
             "type": "object",
             "required": [

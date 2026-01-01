@@ -33,18 +33,21 @@ type DashboardRoom struct {
 	PercentageOfUsage float64 `json:"percentageOfUsage"`
 }
 
-type DashboardResponse struct {
-	Message string `json:"message"`
-	Data    struct {
-		TotalRoom        int             `json:"totalRoom"`
-		TotalVisitor     int             `json:"totalVisitor"`
-		TotalReservation int             `json:"totalReservation"`
-		TotalOmzet       float64         `json:"totalOmzet"`
-		Rooms            []DashboardRoom `json:"rooms"`
-	} `json:"data"`
+// --- PERUBAHAN DISINI: Kita buat struct terpisah untuk Data ---
+type DashboardData struct {
+	TotalRoom        int             `json:"totalRoom"`
+	TotalVisitor     int             `json:"totalVisitor"`
+	TotalReservation int             `json:"totalReservation"`
+	TotalOmzet       float64         `json:"totalOmzet"`
+	Rooms            []DashboardRoom `json:"rooms"`
 }
 
-//
+type DashboardResponse struct {
+	Message string        `json:"message"`
+	Data    DashboardData `json:"data"` // Menggunakan struct bernama
+}
+
+// Struct untuk legacy / other usage
 type RoomSchedule struct {
 	ID               int       `json:"id"`
 	StartTime        time.Time `json:"startTime"`

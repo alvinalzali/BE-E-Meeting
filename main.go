@@ -21,7 +21,6 @@ import (
 	_ "BE-E-Meeting/docs"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -29,7 +28,6 @@ import (
 	"github.com/labstack/echo/v4"
 	_ "github.com/lib/pq"
 	echoSwagger "github.com/swaggo/echo-swagger"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type CustomValdator struct {
@@ -73,6 +71,7 @@ func main() {
 
 	// 3. Migration
 	skipMigration := os.Getenv("SKIP_MIGRATION")
+	skipMigration = strings.ToLower(skipMigration)
 	if skipMigration != "true" {
 		fmt.Println("Enter 1 for migrate up, 2 for migrate down, 3 for continue:")
 		var input int
@@ -97,6 +96,7 @@ func main() {
 	roomRepo := repositories.NewRoomRepository(db)
 	snackRepo := repositories.NewSnackRepository(db)
 	resRepo := repositories.NewReservationRepository(db)
+	dashboardRepo := repositories.NewDashboardRepository(db)
 
 	// --- B. Usecase Initialization ---
 	userUsecase := usecases.NewUserUsecase(userRepo)
@@ -104,12 +104,14 @@ func main() {
 	snackUsecase := usecases.NewSnackUsecase(snackRepo)
 	// Reservation butuh Room dan Snack Repo juga
 	resUsecase := usecases.NewReservationUsecase(resRepo, roomRepo, snackRepo)
+	dashboardUsecase := usecases.NewDashboardUsecase(dashboardRepo)
 
 	// --- C. Handler Initialization ---
 	userHandler := handler.NewUserHandler(userUsecase)
 	roomHandler := handler.NewRoomHandler(roomUsecase)
 	snackHandler := handler.NewSnackHandler(snackUsecase)
 	resHandler := handler.NewReservationHandler(resUsecase)
+	dashboardHandler := handler.NewDashboardHandler(dashboardUsecase)
 
 	// ==========================================
 	// ROUTES
@@ -125,9 +127,16 @@ func main() {
 	e.GET("/users/:id", userHandler.GetProfile, middleware.RoleAuthMiddleware("admin", "user"))
 	e.PUT("/users/:id", userHandler.UpdateUser, middleware.RoleAuthMiddleware("admin", "user"))
 
-	// Legacy User Routes (Belum refactor)
-	e.POST("password/reset_request", PasswordReset)
-	e.PUT("/password/reset/:id", PasswordResetId, middleware.RoleAuthMiddleware("admin", "user"))
+	// Password Reset (Pake Handler Baru)
+	e.POST("password/reset_request", userHandler.RequestPasswordReset)
+
+	// Note: Middleware Auth TIDAK DIPAKAI di sini karena user belum login (Lupa Password)
+	// Token validasi dilakukan di dalam logic ResetPassword usecase
+	e.PUT("/password/reset/:id", userHandler.ResetPassword, middleware.RoleAuthMiddleware("admin", "user"))
+
+	// // Legacy User Routes (Belum refactor)
+	// e.POST("password/reset_request", PasswordReset)
+	// e.PUT("/password/reset/:id", PasswordResetId, middleware.RoleAuthMiddleware("admin", "user"))
 
 	// --- 2. ROOM MODULE ---
 	e.POST("/rooms", roomHandler.CreateRoom, middleware.RoleAuthMiddleware("admin"))
@@ -147,10 +156,12 @@ func main() {
 	e.GET("/reservation/:id", resHandler.GetReservationByID, middleware.RoleAuthMiddleware("admin", "user"))
 	e.GET("/reservations/schedules", resHandler.GetReservationSchedules, middleware.RoleAuthMiddleware("admin"))
 
+	// -- 5. Dashboard Module ---
+	e.GET("/dashboard", dashboardHandler.GetDashboard, middleware.RoleAuthMiddleware("admin"))
+
 	// Legacy Routes (Belum refactor penuh)
 	e.GET("/rooms/:id/reservation", GetRoomReservationSchedule, middleware.RoleAuthMiddleware("admin", "user")) // Per room schedule
 	e.POST("/uploads", UploadImage, middleware.RoleAuthMiddleware("admin", "user"))                             // Standalone upload
-	e.GET("/dashboard", GetDashboard, middleware.RoleAuthMiddleware("admin"))                                   // Dashboard
 
 	e.Logger.Fatal(e.Start(":8080"))
 }
@@ -192,105 +203,7 @@ func migrateDown(db *sql.DB) {
 	fmt.Println("Migrate down successfully")
 }
 
-// --- LEGACY HELPERS (Still needed for legacy handlers) ---
-func isValidPassword(password string) bool {
-	var hasUpper, hasLower, hasNumber, hasSpecial bool
-	for _, char := range password {
-		switch {
-		case 'A' <= char && char <= 'Z':
-			hasUpper = true
-		case 'a' <= char && char <= 'z':
-			hasLower = true
-		case '0' <= char && char <= '9':
-			hasNumber = true
-		case (char >= 33 && char <= 47) || (char >= 58 && char <= 64) || (char >= 91 && char <= 96) || (char >= 123 && char <= 126):
-			hasSpecial = true
-		}
-	}
-	return hasUpper && hasLower && hasNumber && hasSpecial
-}
-
-func hashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(bytes), err
-}
-
-func generateResetToken(email string) (string, error) {
-	JwtSecret = []byte(os.Getenv("secret_key"))
-	claims := &entities.Claims{
-		Username: email,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(JwtSecret)
-}
-
 // --- LEGACY HANDLERS ---
-
-// PasswordResetId godoc
-func PasswordResetId(c echo.Context) error {
-	id := c.Param("id")
-	var passReset entities.PasswordConfirmReset
-	userID, err := strconv.Atoi(id)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-	userToken := c.Get("user").(*jwt.Token)
-	claims := userToken.Claims.(jwt.MapClaims)
-	usernameFromToken := claims["username"].(string)
-	var usernameFromDB string
-	err = db.QueryRow("SELECT username FROM users WHERE id = $1", userID).Scan(&usernameFromDB)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-	if usernameFromToken != usernameFromDB {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-	if err := c.Bind(&passReset); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-	if passReset.NewPassword != passReset.ConfirmPassword {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "New password and confirm password do not match"})
-	}
-	if err := c.Validate(&passReset); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Validation Error"})
-	}
-	if !isValidPassword(passReset.NewPassword) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Password weak"})
-	}
-	hashedPassword, _ := hashPassword(passReset.NewPassword)
-	sqlStatement := `UPDATE users SET password_hash=$1 WHERE id=$2`
-	_, err = db.Exec(sqlStatement, hashedPassword, id)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internal Server Error"})
-	}
-	return c.JSON(http.StatusOK, echo.Map{"message": "Password reset successfully"})
-}
-
-// PasswordReset godoc
-func PasswordReset(c echo.Context) error {
-	var resetReq entities.ResetRequest
-	if err := c.Bind(&resetReq); err != nil {
-		return c.JSON(http.StatusBadRequest, err)
-	}
-	if err := c.Validate(&resetReq); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Bad Request"})
-	}
-	var storedEmail string
-	err := db.QueryRow(`SELECT email FROM users WHERE email=$1`, resetReq.Email).Scan(&storedEmail)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return c.JSON(http.StatusNotFound, echo.Map{"error": "Email not found"})
-		}
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Internel Server Error"})
-	}
-	resetToken, _ := generateResetToken(storedEmail)
-	fmt.Println("Password reset requested for email:", resetReq.Email)
-	return c.JSON(http.StatusOK, echo.Map{"message": "Update Password Success!", "token": resetToken})
-}
 
 // UploadImage godoc
 func UploadImage(c echo.Context) error {
@@ -323,53 +236,6 @@ func UploadImage(c echo.Context) error {
 	baseURL := c.Scheme() + "://" + c.Request().Host
 	imageURL := baseURL + "/assets/temp/" + filename
 	return c.JSON(http.StatusOK, echo.Map{"message": "Image uploaded successfully", "imageURL": imageURL})
-}
-
-// GetDashboard godoc
-func GetDashboard(c echo.Context) error {
-	startDate := c.QueryParam("startDate")
-	endDate := c.QueryParam("endDate")
-	var start, end time.Time
-	var err error
-	if startDate != "" {
-		start, err = time.Parse("2006-01-02", startDate)
-		if err != nil {
-			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid startDate"})
-		}
-	}
-	if endDate != "" {
-		end, err = time.Parse("2006-01-02", endDate)
-		if err != nil {
-			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid endDate"})
-		}
-	}
-	var totalRoom int
-	db.QueryRow(`SELECT COUNT(*) FROM rooms`).Scan(&totalRoom)
-	filterSQL := ` WHERE res.status_reservation = 'paid' `
-	args := []interface{}{}
-	argIdx := 1
-	if !start.IsZero() {
-		filterSQL += fmt.Sprintf(" AND DATE(rd.start_at) >= $%d", argIdx)
-		args = append(args, start)
-		argIdx++
-	}
-	if !end.IsZero() {
-		filterSQL += fmt.Sprintf(" AND DATE(rd.end_at) <= $%d", argIdx)
-		args = append(args, end)
-		argIdx++
-	}
-	var totalVisitor, totalReservation int
-	var totalOmzet float64
-	totalsQuery := `SELECT COALESCE(SUM(rd.total_participants), 0), COUNT(DISTINCT res.id), COALESCE(SUM(res.total), 0) FROM reservations res JOIN reservation_details rd ON res.id = rd.reservation_id` + filterSQL
-	db.QueryRow(totalsQuery, args...).Scan(&totalVisitor, &totalReservation, &totalOmzet)
-	// (Bagian Room Stats dipotong sedikit biar ringkas, tapi logic intinya sama dengan file lamamu)
-	// Jika ingin Dashboard full, copy function GetDashboard lama kesini
-	response := entities.DashboardResponse{Message: "get dashboard data success"}
-	response.Data.TotalRoom = totalRoom
-	response.Data.TotalVisitor = totalVisitor
-	response.Data.TotalReservation = totalReservation
-	response.Data.TotalOmzet = totalOmzet
-	return c.JSON(http.StatusOK, response)
 }
 
 // GetRoomReservationSchedule godoc (Specific Room Schedule)

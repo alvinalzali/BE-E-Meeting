@@ -14,6 +14,8 @@ type UserRepository interface {
 	GetByEmail(email string) (entities.GetUser, string, error)       // Return GetUser + Hash
 	GetByID(id int) (entities.GetUser, error)
 
+	UpdatePassword(id int, passwordHash string) error
+
 	Update(user entities.UpdateUser, id int) error
 	CheckEmailExists(email string, excludeID int) (bool, error)
 	CheckUsernameExists(username string, excludeID int) (bool, error)
@@ -143,4 +145,10 @@ func (r *userRepository) CheckUsernameExists(username string, excludeID int) (bo
 	sqlStatement := `SELECT EXISTS(SELECT 1 FROM users WHERE username=$1 AND id<>$2)`
 	err := r.db.QueryRow(sqlStatement, username, excludeID).Scan(&exists)
 	return exists, err
+}
+
+// 8. Update Password
+func (r *userRepository) UpdatePassword(id int, passwordHash string) error {
+	_, err := r.db.Exec(`UPDATE users SET password_hash=$1 WHERE id=$2`, passwordHash, id)
+	return err
 }
