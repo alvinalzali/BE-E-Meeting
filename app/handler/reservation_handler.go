@@ -247,3 +247,47 @@ func (h *ReservationHandler) GetReservationSchedules(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, res)
 }
+
+// GetRoomReservationSchedule godoc
+// @Summary Get room reservation schedule
+// @Description Get all reservations for a specific room
+// @Tags Room
+// @Produce json
+// @Param id path string true "Room ID"
+// @Param date query string false "Date filter (YYYY-MM-DD)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Security BearerAuth
+// @Router /rooms/{id}/reservation [get]
+func (h *ReservationHandler) GetRoomReservationSchedule(c echo.Context) error {
+	roomID, _ := strconv.Atoi(c.Param("id"))
+	startDTStr := c.QueryParam("start_datetime")
+	endDTStr := c.QueryParam("end_datetime")
+	dateStr := c.QueryParam("date")
+
+	var startDT, endDT time.Time
+	var err error
+
+	// Logic parsing tanggal (sama seperti di main.go lama)
+	if startDTStr != "" && endDTStr != "" {
+		startDT, _ = time.Parse(time.RFC3339, startDTStr)
+		endDT, _ = time.Parse(time.RFC3339, endDTStr)
+	} else if dateStr != "" {
+		startDT, err = time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid date"})
+		}
+		endDT = startDT.Add(24 * time.Hour)
+	} else {
+		startDT = time.Now()
+		endDT = startDT.Add(24 * time.Hour)
+	}
+
+	res, err := h.usecase.GetRoomSchedule(roomID, startDT, endDT)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"message": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "success", "data": res})
+}

@@ -3,6 +3,7 @@ package usecases
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"BE-E-Meeting/app/entities"
 	"BE-E-Meeting/app/repositories"
@@ -16,6 +17,7 @@ type ReservationUsecase interface {
 	UpdateStatus(id, userID int, status string, userRole string) error
 	GetSchedules(startDate, endDate string, page, pageSize int) (entities.ScheduleResponse, error)
 	GetUserIDByUsername(username string) (int, error)
+	GetRoomSchedule(roomID int, start, end time.Time) (map[string]interface{}, error) // <--- BARU
 }
 
 type reservationUsecase struct {
@@ -195,4 +197,25 @@ func (u *reservationUsecase) GetSchedules(startDate, endDate string, page, pageS
 
 func (u *reservationUsecase) GetUserIDByUsername(username string) (int, error) {
 	return u.resRepo.GetUserIDByUsername(username)
+}
+
+func (u *reservationUsecase) GetRoomSchedule(roomID int, start, end time.Time) (map[string]interface{}, error) {
+	// 1. Ambil Data Room dulu
+	room, err := u.roomRepo.GetByID(roomID)
+	if err != nil {
+		return nil, errors.New("room not found")
+	}
+
+	// 2. Ambil Schedule
+	schedules, err := u.resRepo.GetReservationsByRoomID(roomID, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Gabungkan Format Response
+	return map[string]interface{}{
+		"room":      room,
+		"schedules": schedules,
+		"date":      start.Format("2006-01-02"), // Info tanggal awal filter
+	}, nil
 }

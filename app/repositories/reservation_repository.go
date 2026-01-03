@@ -18,6 +18,7 @@ type ReservationRepository interface {
 	GetSchedules(startDate, endDate string, limit, offset int) ([]entities.RoomScheduleInfo, int, error)
 	GetUserIDByUsername(username string) (int, error)
 	GetLatestReservationIDByUserID(userID int) (int, error)
+	GetReservationsByRoomID(roomID int, start, end time.Time) ([]entities.RoomSchedule, error) // <--- BARU
 }
 
 type reservationRepository struct {
@@ -342,4 +343,50 @@ func (r *reservationRepository) GetLatestReservationIDByUserID(userID int) (int,
 	var id int
 	err := r.db.QueryRow(`SELECT id FROM reservations WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, userID).Scan(&id)
 	return id, err
+}
+
+func (r *reservationRepository) GetReservationsByRoomID(roomID int, start, end time.Time) ([]entities.RoomSchedule, error) {
+	var rows *sql.Rows
+	var err error
+
+	// query jadwal yang bentrok
+	query := `
+        SELECT rd.id, rd.start_at, rd.end_at, r.status_reservation, rd.total_participants 
+        FROM reservation_details rd 
+        JOIN reservations r ON rd.reservation_id = r.id 
+        WHERE rd.room_id = $1 
+        AND (rd.start_at, rd.end_at) OVERLAPS ($2, $3) 
+        ORDER BY rd.start_at ASC
+    `
+	rows, err = r.db.Query(query, roomID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schedules []entities.RoomSchedule
+	for rows.Next() {
+		var s entities.RoomSchedule
+		var startAt, endAt sql.NullTime
+		var status sql.NullString
+		var p sql.NullInt64
+
+		rows.Scan(&s.ID, &startAt, &endAt, &status, &p)
+
+		if startAt.Valid {
+			s.StartTime = startAt.Time
+		}
+		if endAt.Valid {
+			s.EndTime = endAt.Time
+		}
+		if status.Valid {
+			s.Status = status.String
+		}
+		if p.Valid {
+			s.TotalParticipant = int(p.Int64)
+		}
+
+		schedules = append(schedules, s)
+	}
+	return schedules, nil
 }

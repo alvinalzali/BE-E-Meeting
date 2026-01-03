@@ -45,6 +45,16 @@ definitions:
     - password
     - username
     type: object
+  entities.PasswordConfirmReset:
+    properties:
+      confirm_password:
+        type: string
+      new_password:
+        type: string
+    required:
+    - confirm_password
+    - new_password
+    type: object
   entities.PersonalData:
     properties:
       company:
@@ -160,6 +170,13 @@ definitions:
         type: integer
       userID:
         type: integer
+    type: object
+  entities.ResetRequest:
+    properties:
+      email:
+        type: string
+    required:
+    - email
     type: object
   entities.RoomInfo:
     properties:
@@ -422,6 +439,77 @@ paths:
       summary: Login user
       tags:
       - Auth
+  /password/reset:
+    post:
+      consumes:
+      - application/json
+      description: Request a password reset token to be sent to the user's email
+      parameters:
+      - description: Email data
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/entities.ResetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Request password reset
+      tags:
+      - User
+  /password/reset/{id}:
+    put:
+      consumes:
+      - application/json
+      description: Reset user password using a valid reset token
+      parameters:
+      - description: Reset Token (JWT)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Password data
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/entities.PasswordConfirmReset'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Reset user password
+      tags:
+      - User
   /register:
     post:
       consumes:
@@ -904,6 +992,80 @@ paths:
       summary: Update a room by ID
       tags:
       - Room
+  /rooms/{id}/reservation:
+    get:
+      description: Get all reservations for a specific room
+      parameters:
+      - description: Room ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Date filter (YYYY-MM-DD)
+        in: query
+        name: date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get room reservation schedule
+      tags:
+      - Room
+  /save-image:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload an image to temp folder and return its URL
+      parameters:
+      - description: Image file
+        in: formData
+        name: image
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save an image
+      tags:
+      - Image
   /snacks:
     get:
       description: Get all snacks
