@@ -60,33 +60,32 @@ Mendukung reservasi ruangan, snack, manajemen user, upload gambar, serta Swagger
 ## 📂 Project Structure
 
 ```
+```text
+BE-E-MEETING/
 ├── app/
-│   ├── entities/       # Definisi Struct (Model Data & DTO)
-│   ├── handler/        # HTTP Handlers (Controller)
-│   ├── middleware/     # Auth & Role Middleware
-│   ├── repositories/   # Layer Akses Data (Query SQL)
-│   └── usecases/       # Layer Bisnis Logic & Validasi
-├── assets/
-│   ├── default/
-│   └── image/users/
-├── database/           # Konfigurasi DB & Helper Migrasi
-├── docs/
+│   ├── entities/       # Data Models & DTO structs
+│   ├── handler/        # HTTP Handlers (Controllers)
+│   ├── middleware/     # Auth & Role Middlewares
+│   ├── repositories/   # Data Access Layer (SQL Queries)
+│   ├── usecases/       # Business Logic & Validation
+│   └── utils/          # Helper functions (e.g., File handling)
+├── assets/             # Static files storage (images/defaults)
+├── database/           # Database configuration & Migration helpers
+├── docs/               # Swagger documentation generated files
 │   ├── docs.go
 │   ├── swagger.json
 │   └── swagger.yaml
-├── migrations/
-│   ├── 1_users.up.sql
-│   ├── 1_users.down.sql
-│   └── ...
-├── .env
-├── .env.example
-├── docker-compose.yml
-├── Dockerfile
-├── go.mod
-├── go.sum
-├── LICENSE
-├── main.go
-└── ReadMe.md
+├── migrations/         # SQL Migration files (Up/Down)
+├── .env                # Environment variables configuration
+├── .env.example        # Environment variables template
+├── .gitignore          # Git ignore rules
+├── docker-compose.yml  # Docker Compose configuration
+├── Dockerfile          # Docker Build configuration
+├── go.mod              # Go Module definitions
+├── go.sum              # Go Module checksums
+├── LICENSE             # Project License
+├── main.go             # Application Entry Point
+└── README.md           # Project Documentation
 ```
 
 ---
