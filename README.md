@@ -7,36 +7,34 @@ Mendukung reservasi ruangan, snack, manajemen user, upload gambar, serta Swagger
 
 ## ✨ Features
 
-### 🔐 Authentication
+### 🔐 Authentication & User
+* Register & Login (JWT access token)
+* **Password Reset** (Request token via email simulation + Reset password)
+* Get User Profile
+* Update User (with avatar upload validation)
 
-* Register user
-* Login (JWT access + refresh token)
-* Reset password (request token + update via token)
-
-### 👥 Users
-
-* Get user by ID
-* Update user (with avatar upload & validation)
-
-### 🏢 Rooms
-
+### 🏢 Rooms (Admin)
 * Create room (with image validation)
-* Update room
+* Update room details
 * Delete room
-* Search + Pagination
-* Room schedule listing
+* Get all rooms (Search + Pagination + Filter by type/capacity)
+* Get specific room detail
 
 ### 🍽 Snacks
-
-* List all snacks
+* List all snacks available
 
 ### 📅 Reservations
+* **Check Availability** (Mencegah bentrok jadwal)
+* **Calculation** (Estimasi harga sebelum booking)
+* Create reservation (Booking ruangan + Snack)
+* Reservation history (Filter by date, status, room type)
+* Update Reservation Status (Admin: `booked` -> `paid`/`cancel`)
+* Get Reservation Detail
+* Room Schedule Listing
 
-* Reservation calculation
-* Create reservation
-* Reservation history (filter + pagination)
-* Get reservation detail
-* Schedule listing
+### 📊 Dashboard (Admin)
+* View Total Omzet, Total Visitor, Total Reservations
+* Room usage percentage statistics
 
 ### 📸 File Upload
 
@@ -62,31 +60,32 @@ Mendukung reservasi ruangan, snack, manajemen user, upload gambar, serta Swagger
 ## 📂 Project Structure
 
 ```
+```text
+BE-E-MEETING/
 ├── app/
-│   └── entities/
-├── assets/
-│   ├── default/
-│   └── image/users/
-├── database/
-│   ├── data.sql
-│   └── table.sql
-├── docs/
+│   ├── entities/       # Data Models & DTO structs
+│   ├── handler/        # HTTP Handlers (Controllers)
+│   ├── middleware/     # Auth & Role Middlewares
+│   ├── repositories/   # Data Access Layer (SQL Queries)
+│   ├── usecases/       # Business Logic & Validation
+│   └── utils/          # Helper functions (e.g., File handling)
+├── assets/             # Static files storage (images/defaults)
+├── database/           # Database configuration & Migration helpers
+├── docs/               # Swagger documentation generated files
 │   ├── docs.go
 │   ├── swagger.json
 │   └── swagger.yaml
-├── migrations/
-│   ├── 1_users.up.sql
-│   ├── 1_users.down.sql
-│   └── ...
-├── .env
-├── .env.example
-├── docker-compose.yml
-├── Dockerfile
-├── go.mod
-├── go.sum
-├── LICENSE
-├── main.go
-└── ReadMe.md
+├── migrations/         # SQL Migration files (Up/Down)
+├── .env                # Environment variables configuration
+├── .env.example        # Environment variables template
+├── .gitignore          # Git ignore rules
+├── docker-compose.yml  # Docker Compose configuration
+├── Dockerfile          # Docker Build configuration
+├── go.mod              # Go Module definitions
+├── go.sum              # Go Module checksums
+├── LICENSE             # Project License
+├── main.go             # Application Entry Point
+└── README.md           # Project Documentation
 ```
 
 ---
@@ -101,6 +100,7 @@ db_password=yourpassword
 db_name=e_meeting_db
 
 secret_key=yourJWTsecret
+SKIP_MIGRATION=false # Kalau sudah berikan "True"
 ```
 
 ---
@@ -151,24 +151,67 @@ Akses dokumentasi API lengkap di:
 
 ---
 
-## 🔑 Authentication
+### 🔐 Auth
+| Method | Endpoint | Description | Auth |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/login` | Authenticate user & get token | No |
+| `POST` | `/register` | Register a new user | No |
+| `POST` | `/password/reset_request` | Request password reset token (via email) | No |
+| `PUT` | `/password/reset/:token` | Reset password using valid token | No |
 
-Gunakan JWT:
+### 🏢 Rooms
+| Method | Endpoint | Description | Auth |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/rooms` | List all rooms (Search & Filter) | Yes |
+| `POST` | `/rooms` | Create a new room | **Admin** |
+| `GET` | `/rooms/:id/reservation` | Check specific room schedule | Yes |
 
-```
-Authorization: Bearer <token>
-```
+#### 🔹 Detail: Get Rooms
+**Endpoint:** `GET /rooms`
+Filter rooms based on criteria.
 
-Role:
+| Query Param | Type | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `name` | string | Filter by room name (partial match) | `Sakura` |
+| `type` | string | Filter by room type (`small`, `medium`, `large`) | `medium` |
+| `capacity` | int | Filter by minimum capacity | `10` |
+| `page` | int | Page number (default: 1) | `1` |
+| `pageSize` | int | Items per page (default: 10) | `10` |
 
-* `admin`
-* `user`
+### 📅 Reservation
+| Method | Endpoint | Description | Auth |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/reservation/calculation` | Calculate total price before booking | Yes |
+| `POST` | `/reservation` | Create a new reservation (Booking) | Yes |
+| `GET` | `/reservation/history` | View reservation history | Yes |
+| `PUT` | `/reservation/status` | Update reservation status | **Admin** |
 
-Contoh penggunaan middleware:
+#### 🔹 Detail: Reservation History
+**Endpoint:** `GET /reservation/history`
+Retrieve booking history. Users see their own data; Admins see all data.
 
-```go
-roleAuthMiddleware("admin", "user")
-```
+| Query Param | Type | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `startDate` | string | Filter start date (YYYY-MM-DD) | `2024-01-01` |
+| `endDate` | string | Filter end date (YYYY-MM-DD) | `2024-12-31` |
+| `type` | string | Filter by room type | `large` |
+| `status` | string | Filter by status (`booked`, `paid`, `cancel`) | `paid` |
+| `page` | int | Page number | `1` |
+| `pageSize` | int | Items per page | `10` |
+
+### 📊 Dashboard
+| Method | Endpoint | Description | Auth |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/dashboard` | View analytics & statistics | **Admin** |
+
+**Required Query Params:**
+* `startDate` (YYYY-MM-DD)
+* `endDate` (YYYY-MM-DD)
+
+> **Catatan:**
+> * Endpoint dengan Auth **Yes** membutuhkan header `Authorization: Bearer <token>`.
+> * Endpoint Dashboard wajib menyertakan query param `startDate` dan `endDate` (Format: `YYYY-MM-DD`).
+---
 
 ---
 
@@ -194,61 +237,6 @@ image: <file>
 
 ---
 
-## 🏢 Rooms API
-
-### Create Room
-
-```
-POST /rooms
-```
-
-### Get Rooms
-
-```
-GET /rooms?name=&type=&capacity=&page=&pageSize=
-```
-
-### Update Room
-
-```
-PUT /rooms/:id
-```
-
-### Delete Room
-
-```
-DELETE /rooms/:id
-```
-
----
-
-## 📅 Reservation API
-
-### Calculate Reservation
-
-```
-GET /reservation/calculation
-```
-
-### Create Reservation
-
-```
-POST /reservation
-```
-
-### Reservation History
-
-```
-GET /reservation/history?startDate=&endDate=&type=&status=&page=&pageSize=
-```
-
-### Get Reservation Detail
-
-```
-GET /reservation/:id
-```
-
----
 
 ## 🧩 Deployment Notes
 
