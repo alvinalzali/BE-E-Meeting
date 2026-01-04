@@ -153,34 +153,61 @@ Akses dokumentasi API lengkap di:
 ---
 
 ### 🔐 Auth
-| Method | Endpoint | Deskripsi | Auth |
+| Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/login` | Masuk ke sistem dan mendapatkan JWT Token | No |
-| `POST` | `/register` | Mendaftarkan pengguna baru | No |
-| `POST` | `/password/reset_request` | Meminta token reset password (via email) | No |
-| `PUT` | `/password/reset/:token` | Mengubah password menggunakan token yang valid | No |
-
-## 🏢 Rooms API
+| `POST` | `/login` | Authenticate user & get token | No |
+| `POST` | `/register` | Register a new user | No |
+| `POST` | `/password/reset_request` | Request password reset token (via email) | No |
+| `PUT` | `/password/reset/:token` | Reset password using valid token | No |
 
 ### 🏢 Rooms
-| Method | Endpoint | Deskripsi | Auth |
+| Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/rooms` | Melihat daftar ruangan (Search & Filter) | Yes |
-| `POST` | `/rooms` | Menambah ruangan baru | **Admin** |
-| `GET` | `/rooms/:id/reservation` | Melihat jadwal terisi pada ruangan tertentu | Yes |
+| `GET` | `/rooms` | List all rooms (Search & Filter) | Yes |
+| `POST` | `/rooms` | Create a new room | **Admin** |
+| `GET` | `/rooms/:id/reservation` | Check specific room schedule | Yes |
+
+#### 🔹 Detail: Get Rooms
+**Endpoint:** `GET /rooms`
+Filter rooms based on criteria.
+
+| Query Param | Type | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `name` | string | Filter by room name (partial match) | `Sakura` |
+| `type` | string | Filter by room type (`small`, `medium`, `large`) | `medium` |
+| `capacity` | int | Filter by minimum capacity | `10` |
+| `page` | int | Page number (default: 1) | `1` |
+| `pageSize` | int | Items per page (default: 10) | `10` |
 
 ### 📅 Reservation
-| Method | Endpoint | Deskripsi | Auth |
+| Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/reservation/calculation` | Simulasi hitung harga total sebelum booking | Yes |
-| `POST` | `/reservation` | Melakukan pemesanan ruangan (Booking) | Yes |
-| `GET` | `/reservation/history` | Melihat riwayat pemesanan (User/Admin) | Yes |
-| `PUT` | `/reservation/status` | Mengubah status booking (Paid/Cancel) | **Admin** |
+| `GET` | `/reservation/calculation` | Calculate total price before booking | Yes |
+| `POST` | `/reservation` | Create a new reservation (Booking) | Yes |
+| `GET` | `/reservation/history` | View reservation history | Yes |
+| `PUT` | `/reservation/status` | Update reservation status | **Admin** |
+
+#### 🔹 Detail: Reservation History
+**Endpoint:** `GET /reservation/history`
+Retrieve booking history. Users see their own data; Admins see all data.
+
+| Query Param | Type | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `startDate` | string | Filter start date (YYYY-MM-DD) | `2024-01-01` |
+| `endDate` | string | Filter end date (YYYY-MM-DD) | `2024-12-31` |
+| `type` | string | Filter by room type | `large` |
+| `status` | string | Filter by status (`booked`, `paid`, `cancel`) | `paid` |
+| `page` | int | Page number | `1` |
+| `pageSize` | int | Items per page | `10` |
 
 ### 📊 Dashboard
-| Method | Endpoint | Deskripsi | Auth |
+| Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/dashboard` | Statistik omzet & penggunaan ruangan | **Admin** |
+| `GET` | `/dashboard` | View analytics & statistics | **Admin** |
+
+**Required Query Params:**
+* `startDate` (YYYY-MM-DD)
+* `endDate` (YYYY-MM-DD)
 
 > **Catatan:**
 > * Endpoint dengan Auth **Yes** membutuhkan header `Authorization: Bearer <token>`.
