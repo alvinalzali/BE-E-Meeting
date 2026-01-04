@@ -152,24 +152,40 @@ Akses dokumentasi API lengkap di:
 
 ---
 
-## 🔑 Authentication
+### 🔐 Auth
+| Method | Endpoint | Deskripsi | Auth |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/login` | Masuk ke sistem dan mendapatkan JWT Token | No |
+| `POST` | `/register` | Mendaftarkan pengguna baru | No |
+| `POST` | `/password/reset_request` | Meminta token reset password (via email) | No |
+| `PUT` | `/password/reset/:token` | Mengubah password menggunakan token yang valid | No |
 
-Gunakan JWT:
+## 🏢 Rooms API
 
-```
-Authorization: Bearer <token>
-```
+### 🏢 Rooms
+| Method | Endpoint | Deskripsi | Auth |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/rooms` | Melihat daftar ruangan (Search & Filter) | Yes |
+| `POST` | `/rooms` | Menambah ruangan baru | **Admin** |
+| `GET` | `/rooms/:id/reservation` | Melihat jadwal terisi pada ruangan tertentu | Yes |
 
-Role:
+### 📅 Reservation
+| Method | Endpoint | Deskripsi | Auth |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/reservation/calculation` | Simulasi hitung harga total sebelum booking | Yes |
+| `POST` | `/reservation` | Melakukan pemesanan ruangan (Booking) | Yes |
+| `GET` | `/reservation/history` | Melihat riwayat pemesanan (User/Admin) | Yes |
+| `PUT` | `/reservation/status` | Mengubah status booking (Paid/Cancel) | **Admin** |
 
-* `admin`
-* `user`
+### 📊 Dashboard
+| Method | Endpoint | Deskripsi | Auth |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/dashboard` | Statistik omzet & penggunaan ruangan | **Admin** |
 
-Contoh penggunaan middleware:
-
-```go
-roleAuthMiddleware("admin", "user")
-```
+> **Catatan:**
+> * Endpoint dengan Auth **Yes** membutuhkan header `Authorization: Bearer <token>`.
+> * Endpoint Dashboard wajib menyertakan query param `startDate` dan `endDate` (Format: `YYYY-MM-DD`).
+---
 
 ---
 
@@ -195,61 +211,6 @@ image: <file>
 
 ---
 
-## 🏢 Rooms API
-
-### Create Room
-
-```
-POST /rooms
-```
-
-### Get Rooms
-
-```
-GET /rooms?name=&type=&capacity=&page=&pageSize=
-```
-
-### Update Room
-
-```
-PUT /rooms/:id
-```
-
-### Delete Room
-
-```
-DELETE /rooms/:id
-```
-
----
-
-## 📅 Reservation API
-
-### Calculate Reservation
-
-```
-GET /reservation/calculation
-```
-
-### Create Reservation
-
-```
-POST /reservation
-```
-
-### Reservation History
-
-```
-GET /reservation/history?startDate=&endDate=&type=&status=&page=&pageSize=
-```
-
-### Get Reservation Detail
-
-```
-GET /reservation/:id
-```
-
----
 
 ## 🧩 Deployment Notes
 
