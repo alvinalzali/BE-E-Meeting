@@ -4,39 +4,54 @@ import (
 	"time"
 )
 
-type ReservationRequestBody struct {
-	UserID            int                      `json:"userID"`
-	Name              string                   `json:"name"`
-	PhoneNumber       string                   `json:"phoneNumber"`
-	Company           string                   `json:"company"`
-	Notes             string                   `json:"notes"`
-	TotalParticipants int                      `json:"totalParticipants"` // total keseluruhan peserta
-	AddSnack          bool                     `json:"addSnack"`          // apakah reservasi ini melibatkan snack
-	Rooms             []RoomReservationRequest `json:"rooms"`
+// ==========================================
+// 1. REQUEST MODELS
+// ==========================================
+
+type ReservationRequest struct {
+	UserID      int    `json:"userID"` // Diisi token
+	Name        string `json:"name" validate:"required"`
+	PhoneNumber string `json:"phoneNumber" validate:"required"`
+	Company     string `json:"company" validate:"required"`
+	Notes       string `json:"notes"`
+	// TotalParticipants bisa dihitung dari jumlah peserta per room,
+	// tapi jika butuh data global, kita simpan disini.
+	TotalParticipants int                      `json:"totalParticipants"`
+	Rooms             []RoomReservationRequest `json:"rooms" validate:"required,min=1"`
 }
 
-// Response struct history
-type HistoryResponse struct {
-	Message string               `json:"message"`
-	Data    []ReservationHistory `json:"data"`
+type UpdateReservationRequest struct {
+	ReservationID int    `json:"reservation_id" validate:"required"`
+	Status        string `json:"status" validate:"required,oneof=booked cancel paid"`
 }
 
-// Data struct h
-type ReservationHistory struct {
-	ID            int     `json:"id"`
-	Name          string  `json:"name"`
-	PhoneNumber   float64 `json:"phoneNumber"`
-	Company       string  `json:"company"`
-	SubTotalSnack float64 `json:"subTotalSnack"`
-	SubTotalRoom  float64 `json:"subTotalRoom"`
-	GrandTotal    float64 `json:"grandTotal"`
-	Type          string  `json:"type"`
-	Status        string  `json:"status"`
-	CreatedAt     string  `json:"createdAt"`
+// ==========================================
+// 2. RESPONSE MODELS
+// ==========================================
+
+// --- A. Calculation Response ---
+type CalculateReservationData struct {
+	Rooms         []RoomCalculationDetail `json:"rooms"`
+	SubTotalRoom  float64                 `json:"subTotalRoom"`
+	SubTotalSnack float64                 `json:"subTotalSnack"`
+	Total         float64                 `json:"total"`
 }
 
-// Struct Reservation History :
-// Untuk respons utama
+type RoomCalculationDetail struct {
+	Name          string    `json:"name"`
+	PricePerHour  float64   `json:"pricePerHour"`
+	ImageURL      string    `json:"imageURL"`
+	SubTotalSnack float64   `json:"subTotalSnack"`
+	SubTotalRoom  float64   `json:"subTotalRoom"`
+	StartTime     time.Time `json:"startTime"`
+	EndTime       time.Time `json:"endTime"`
+	Duration      int       `json:"duration"` // menit
+	Participant   int       `json:"participant"`
+	Snack         *Snack    `json:"snack"`
+}
+
+// --- B. History & Detail Response ---
+
 type ReservationHistoryResponse struct {
 	Message   string                   `json:"message"`
 	Data      []ReservationHistoryData `json:"data"`
@@ -46,89 +61,69 @@ type ReservationHistoryResponse struct {
 	TotalData int                      `json:"totalData"`
 }
 
-// Room detail dalam response perhitungan reservasi
-type RoomCalculationDetail struct {
+type ReservationDetailResponse struct {
+	Message string                 `json:"message"`
+	Data    ReservationHistoryData `json:"data"`
+}
+
+type ReservationHistoryData struct {
+	ID            int       `json:"id"`
 	Name          string    `json:"name"`
-	PricePerHour  float64   `json:"pricePerHour"`
-	ImageURL      string    `json:"imageURL"`
-	Capacity      int       `json:"capacity"`
-	Type          string    `json:"type"`
+	PhoneNumber   string    `json:"phoneNumber"`
+	Company       string    `json:"company"`
 	SubTotalSnack float64   `json:"subTotalSnack"`
 	SubTotalRoom  float64   `json:"subTotalRoom"`
-	StartTime     time.Time `json:"startTime"`
-	EndTime       time.Time `json:"endTime"`
-	Duration      int       `json:"duration"`
-	Participant   int       `json:"participant"`
-	Snack         Snack     `json:"snack"`
+	Total         float64   `json:"total"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"createdAt"`
+	// Kita gunakan struct khusus untuk response history agar aman dari format RoomInfo
+	Rooms []ReservationRoomDetail `json:"rooms"`
 }
 
-// Data personal yang disertakan pada reservasi
-type PersonalData struct {
-	Name        string `json:"name"`
-	PhoneNumber string `json:"phoneNumber"`
-	Company     string `json:"company"`
-}
-
-type CalculateReservationResponse struct {
-	Message string                   `json:"message"`
-	Data    CalculateReservationData `json:"data"`
-}
-
-type CalculateReservationData struct {
-	Rooms         []RoomCalculationDetail `json:"rooms"`
-	PersonalData  PersonalData            `json:"personalData"`
-	SubTotalRoom  float64                 `json:"subTotalRoom"`
-	SubTotalSnack float64                 `json:"subTotalSnack"`
-	Total         float64                 `json:"total"`
-}
-
-// Data utama per reservation
-type ReservationHistoryData struct {
-	ID            int                            `json:"id"`
-	Name          string                         `json:"name"`
-	PhoneNumber   string                         `json:"phoneNumber"`
-	Company       string                         `json:"company"`
-	SubTotalSnack float64                        `json:"subTotalSnack"`
-	SubTotalRoom  float64                        `json:"subTotalRoom"`
-	Total         float64                        `json:"total"`
-	Status        string                         `json:"status"`
-	CreatedAt     time.Time                      `json:"createdAt"`
-	UpdatedAt     *time.Time                     `json:"updatedAt"` // <--- Ganti jadi Pointer Time
-	Rooms         []ReservationHistoryRoomDetail `json:"rooms"`
-}
-
-// Detail room di dalam reservation
-type ReservationHistoryRoomDetail struct {
+type ReservationRoomDetail struct {
 	ID         int     `json:"id"`
-	Price      float64 `json:"price"`
 	Name       string  `json:"name"`
 	Type       string  `json:"type"`
+	Price      float64 `json:"price"`
 	TotalRoom  float64 `json:"totalRoom"`
 	TotalSnack float64 `json:"totalSnack"`
 }
 
-type UpdateReservationRequest struct {
-	ReservationID int    `json:"reservation_id" validate:"required"`
-	Status        string `json:"status" validate:"required,oneof=booked cancel paid"`
+// --- C. Schedule Response ---
+
+type ScheduleResponse struct {
+	Message   string             `json:"message"`
+	Data      []RoomScheduleInfo `json:"data"`
+	TotalData int                `json:"totalData"`
 }
 
-// Add this response types
-type ReservationByIDData struct {
-	Rooms         []RoomInfo   `json:"rooms"`
-	PersonalData  PersonalData `json:"personalData"`
-	SubTotalSnack float64      `json:"subTotalSnack"`
-	SubTotalRoom  float64      `json:"subTotalRoom"`
-	Total         float64      `json:"total"`
-	Status        string       `json:"status"`
+type RoomScheduleInfo struct {
+	ID          string     `json:"id"`
+	RoomName    string     `json:"roomName"`
+	CompanyName string     `json:"companyName"`
+	Schedules   []Schedule `json:"schedules"`
 }
 
-type ReservationByIDResponse struct {
-	Message string              `json:"message"`
-	Data    ReservationByIDData `json:"data"`
+type Schedule struct {
+	StartTime string `json:"startTime"`
+	EndTime   string `json:"endTime"`
+	Status    string `json:"status"`
 }
 
-// Struct ini mewakili baris data di tabel 'reservations'
+type RoomSchedule struct {
+	ID               int       `json:"id"`
+	StartTime        time.Time `json:"startTime"`
+	EndTime          time.Time `json:"endTime"`
+	Status           string    `json:"status"`
+	TotalParticipant int       `json:"totalParticipant"`
+}
+
+// ==========================================
+// 3. REPOSITORY DTOs
+// ==========================================
+
 type ReservationData struct {
+	ID                int
 	UserID            int
 	ContactName       string
 	ContactPhone      string
@@ -138,12 +133,11 @@ type ReservationData struct {
 	SubTotalRoom      float64
 	SubTotalSnack     float64
 	Total             float64
-	DurationMinute    int
 	TotalParticipants int
 	AddSnack          bool
+	DurationMinute    int // Field ini penting untuk Repository
 }
 
-// Struct ini mewakili baris data di tabel 'reservation_details'
 type ReservationDetailData struct {
 	ReservationID     int
 	RoomID            int

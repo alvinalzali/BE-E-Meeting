@@ -10,7 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Helper variable (harus sama dengan main.go)
+// Helper variable (Bisa dihapus jika logic default image dipindah ke Usecase)
 var DefaultRoomURL = "http://localhost:8080/assets/default/default_room.jpg"
 
 type RoomHandler struct {
@@ -25,14 +25,10 @@ func NewRoomHandler(usecase usecases.RoomUsecase) *RoomHandler {
 // @Summary Create a new room
 // @Description Create a new room with image validation (JPG/PNG ≤1MB)
 // @Tags Room
-// @Accept multipart/form-data
+// @Accept json
 // @Produce json
-// @Param name formData string true "Room name"
-// @Param type formData string true "Room type (small/medium/large)"
-// @Param capacity formData int true "Room capacity"
-// @Param pricePerHour formData number true "Price per hour"
-// @Param image formData file true "Room image (JPG/PNG ≤1MB)"
-// @Success 201 {object} map[string]string
+// @Param room body entities.RoomRequest true "Room Data"
+// @Success 201 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Security BearerAuth
@@ -43,24 +39,17 @@ func (h *RoomHandler) CreateRoom(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	// --- HANDLE IMAGE UPLOAD ---
-	// Kita panggil fungsi helper yang sudah ada di package handler kamu (di file avatar.go atau image.go)
-	// Pastikan fungsi HandleRoomImageCreate exportable (Huruf Besar)
-	roomImage, err := HandleRoomImageCreate(c, req.ImageURL, DefaultRoomURL)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"message": "failed processing room image"})
-	}
-	req.ImageURL = roomImage
-	// ---------------------------
+	baseURL := c.Scheme() + "://" + c.Request().Host
 
-	err = h.usecase.Create(req)
+	// TANGKAP DATA BALIKAN (updatedRoom)
+	updatedRoom, err := h.usecase.Create(req, baseURL)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": err.Error()})
 	}
 
 	return c.JSON(http.StatusCreated, echo.Map{
-		"message":  "room created successfully",
-		"imageURL": req.ImageURL,
+		"message": "room created successfully",
+		"data":    updatedRoom, // <--- Pakai updatedRoom, JANGAN req
 	})
 }
 
@@ -155,22 +144,18 @@ func (h *RoomHandler) UpdateRoom(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid request format"})
 	}
 
-	// --- HANDLE IMAGE UPLOAD (Update) ---
-	if req.ImageURL != "" { // Jika ada request ganti gambar
-		roomImage, err := HandleRoomImageCreate(c, req.ImageURL, DefaultRoomURL)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"message": "failed processing room image"})
-		}
-		req.ImageURL = roomImage
-	}
-	// ------------------------------------
+	baseURL := c.Scheme() + "://" + c.Request().Host
 
-	err = h.usecase.Update(id, req)
+	// TANGKAP DATA BALIKAN
+	updatedRoom, err := h.usecase.Update(id, req, baseURL)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, echo.Map{"message": err.Error()})
 	}
 
-	return c.JSON(http.StatusOK, echo.Map{"message": "room updated successfully"})
+	return c.JSON(http.StatusOK, echo.Map{
+		"message": "room updated successfully",
+		"data":    updatedRoom, // <--- Pakai updatedRoom
+	})
 }
 
 // DeleteRoom godoc

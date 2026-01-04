@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -151,35 +152,24 @@ func (h *UserHandler) GetProfile(c echo.Context) error {
 // @Security BearerAuth
 // @Router /users/{id} [put]
 func (h *UserHandler) UpdateUser(c echo.Context) error {
-	// 1. Ambil ID dari param
-	idParam := c.Param("id")
-	id, err := strconv.Atoi(idParam)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid ID"})
-	}
+	id, _ := strconv.Atoi(c.Param("id"))
 
-	// 2. Authorization (Cek Token vs ID)
-	userToken := c.Get("user").(*jwt.Token)
-	claims := userToken.Claims.(jwt.MapClaims)
-	usernameFromToken := claims["username"].(string)
-
-	// (Opsional) Ambil data user dulu buat cek kepemilikan
-	currentUser, err := h.usecase.GetProfile(id)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, echo.Map{"error": "User not found"})
-	}
-	if currentUser.Username != usernameFromToken {
-		return c.JSON(http.StatusForbidden, echo.Map{"error": "Unauthorized update"})
-	}
-
-	// 3. Bind Input
 	var input entities.UpdateUser
 	if err := c.Bind(&input); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid input"})
 	}
 
-	// 4. Panggil Usecase
-	updatedUser, err := h.usecase.UpdateUser(id, input)
+	// --- AMBIL BASE URL ---
+	// Ini akan menghasilkan string seperti: "http://localhost:8080"
+	// Handler mengirimkan ini ke Usecase agar Usecase bisa menyusun URL gambar final
+	baseURL := c.Scheme() + "://" + c.Request().Host
+
+	// buat print
+	fmt.Println(baseURL)
+
+	// Panggil Usecase dengan parameter baseURL
+	updatedUser, err := h.usecase.UpdateUser(id, input, baseURL)
+
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
 	}

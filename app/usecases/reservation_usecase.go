@@ -10,14 +10,14 @@ import (
 )
 
 type ReservationUsecase interface {
-	Calculate(req entities.ReservationRequestBody) (entities.CalculateReservationData, error)
-	Create(req entities.ReservationRequestBody) error
-	GetHistory(userID int, userRole string, startDate, endDate, roomType, status string, page, pageSize int) (entities.ReservationHistoryResponse, error)
-	GetByID(id int) (entities.ReservationByIDResponse, error)
+	Calculate(req entities.ReservationRequest) (entities.CalculateReservationData, error)
+	Create(req entities.ReservationRequest) error
+	GetHistory(userID int, startDate, endDate, roomType, status string, page, pageSize int) (entities.ReservationHistoryResponse, error)
+	GetByID(id int) (entities.ReservationDetailResponse, error)
 	UpdateStatus(id, userID int, status string, userRole string) error
-	GetSchedules(startDate, endDate string, page, pageSize int) (entities.ScheduleResponse, error)
 	GetUserIDByUsername(username string) (int, error)
-	GetRoomSchedule(roomID int, start, end time.Time) (map[string]interface{}, error) // <--- BARU
+	GetSchedules(startDate, endDate string, page, pageSize int) (entities.ScheduleResponse, error)
+	GetRoomSchedule(roomID int, start, end time.Time) (map[string]interface{}, error)
 }
 
 type reservationUsecase struct {
@@ -35,58 +35,63 @@ func NewReservationUsecase(resRepo repositories.ReservationRepository, roomRepo 
 }
 
 // 1. Calculate
-func (u *reservationUsecase) Calculate(req entities.ReservationRequestBody) (entities.CalculateReservationData, error) {
+func (u *reservationUsecase) Calculate(req entities.ReservationRequest) (entities.CalculateReservationData, error) {
 	var result entities.CalculateReservationData
 	if len(req.Rooms) == 0 {
 		return result, errors.New("rooms cannot be empty")
 	}
-	reqRoom := req.Rooms[0]
 
-	room, err := u.roomRepo.GetByID(reqRoom.ID)
-	if err != nil {
-		return result, errors.New("room not found")
-	}
-
-	snackPrice := 0.0
-	snackName := ""
-	if reqRoom.AddSnack && reqRoom.SnackID > 0 {
-		snack, err := u.snackRepo.GetByID(reqRoom.SnackID)
+	for _, reqRoom := range req.Rooms {
+		// [PENTING] Akses field ID (sesuai entities/room.go)
+		room, err := u.roomRepo.GetByID(reqRoom.ID)
 		if err != nil {
-			return result, errors.New("snack not found")
+			return result, errors.New("room not found")
 		}
-		snackPrice = snack.Price
-		snackName = snack.Name
-	}
 
-	available, err := u.resRepo.CheckAvailability(reqRoom.ID, reqRoom.StartTime, reqRoom.EndTime)
-	if err != nil {
-		return result, err
-	}
-	if !available {
-		return result, errors.New("booking bentrok")
-	}
+		snackPrice := 0.0
+		var snackData *entities.Snack
+		if reqRoom.AddSnack && reqRoom.SnackID > 0 {
+			snack, err := u.snackRepo.GetByID(reqRoom.SnackID)
+			if err != nil {
+				return result, errors.New("snack not found")
+			}
+			snackPrice = snack.Price
+			snackData = &entities.Snack{ID: snack.ID, Name: snack.Name, Price: snack.Price}
+		}
 
-	durationMins := int(reqRoom.EndTime.Sub(reqRoom.StartTime).Minutes())
-	durationHours := float64(durationMins) / 60.0
-	subTotalRoom := room.PricePerHour * durationHours
-	subTotalSnack := snackPrice * float64(reqRoom.Participant)
+		available, err := u.resRepo.CheckAvailability(reqRoom.ID, reqRoom.StartTime, reqRoom.EndTime)
+		if err != nil {
+			return result, err
+		}
+		if !available {
+			return result, errors.New("booking schedule conflict")
+		}
 
-	result.SubTotalRoom = subTotalRoom
-	result.SubTotalSnack = subTotalSnack
-	result.Total = subTotalRoom + subTotalSnack
-	result.Rooms = append(result.Rooms, entities.RoomCalculationDetail{
-		Name: room.Name, PricePerHour: room.PricePerHour, ImageURL: room.PictureURL,
-		SubTotalRoom: subTotalRoom, SubTotalSnack: subTotalSnack,
-		StartTime: reqRoom.StartTime, EndTime: reqRoom.EndTime,
-		Snack: entities.Snack{ID: reqRoom.SnackID, Name: snackName, Price: snackPrice},
-	})
+		durationMins := int(reqRoom.EndTime.Sub(reqRoom.StartTime).Minutes())
+		durationHours := float64(durationMins) / 60.0
+		subTotalRoom := room.PricePerHour * durationHours
+		subTotalSnack := snackPrice * float64(reqRoom.Participant)
+
+		result.SubTotalRoom += subTotalRoom
+		result.SubTotalSnack += subTotalSnack
+		result.Rooms = append(result.Rooms, entities.RoomCalculationDetail{
+			Name: room.Name, PricePerHour: room.PricePerHour, ImageURL: room.PictureURL,
+			SubTotalRoom: subTotalRoom, SubTotalSnack: subTotalSnack,
+			StartTime: reqRoom.StartTime, EndTime: reqRoom.EndTime,
+			Duration: durationMins, Participant: reqRoom.Participant,
+			Snack: snackData,
+		})
+	}
+	result.Total = result.SubTotalRoom + result.SubTotalSnack
 
 	return result, nil
 }
 
 // 2. Create
-func (u *reservationUsecase) Create(req entities.ReservationRequestBody) error {
+func (u *reservationUsecase) Create(req entities.ReservationRequest) error {
+	// Cek Availability Semua Room
 	for _, r := range req.Rooms {
+		// [PENTING] Akses r.ID
 		avail, err := u.resRepo.CheckAvailability(r.ID, r.StartTime, r.EndTime)
 		if err != nil {
 			return err
@@ -105,6 +110,8 @@ func (u *reservationUsecase) Create(req entities.ReservationRequestBody) error {
 	resData.ContactCompany = req.Company
 	resData.Note = req.Notes
 
+	// Kita bisa hitung total participants dari penjumlahan room participants
+	calculatedTotalParticipants := 0
 	totalGlobal := 0.0
 
 	for _, r := range req.Rooms {
@@ -115,6 +122,7 @@ func (u *reservationUsecase) Create(req entities.ReservationRequestBody) error {
 
 		snackPrice := 0.0
 		snackName := ""
+		snackID := 0
 		if r.AddSnack && r.SnackID > 0 {
 			snackDB, err := u.snackRepo.GetByID(r.SnackID)
 			if err != nil {
@@ -122,6 +130,7 @@ func (u *reservationUsecase) Create(req entities.ReservationRequestBody) error {
 			}
 			snackPrice = snackDB.Price
 			snackName = snackDB.Name
+			snackID = snackDB.ID
 		}
 
 		durMins := int(r.EndTime.Sub(r.StartTime).Minutes())
@@ -131,91 +140,81 @@ func (u *reservationUsecase) Create(req entities.ReservationRequestBody) error {
 		totalGlobal += (priceRoom + priceSnack)
 		resData.SubTotalRoom += priceRoom
 		resData.SubTotalSnack += priceSnack
-		resData.TotalParticipants += r.Participant
+		calculatedTotalParticipants += r.Participant
 
 		detData = append(detData, entities.ReservationDetailData{
 			RoomID: roomDB.ID, RoomName: roomDB.Name, RoomPrice: roomDB.PricePerHour,
-			SnackID: r.SnackID, SnackName: snackName, SnackPrice: snackPrice,
+			SnackID: snackID, SnackName: snackName, SnackPrice: snackPrice,
 			DurationMinute: durMins, TotalParticipants: r.Participant,
 			TotalRoom: priceRoom, TotalSnack: priceSnack,
 			StartAt: r.StartTime, EndAt: r.EndTime,
 		})
 	}
 	resData.Total = totalGlobal
+	resData.TotalParticipants = calculatedTotalParticipants
 
 	return u.resRepo.Create(resData, detData)
 }
 
-func (u *reservationUsecase) GetHistory(userID int, userRole, startDate, endDate, roomType, status string, page, pageSize int) (entities.ReservationHistoryResponse, error) {
+// 3. Get History
+func (u *reservationUsecase) GetHistory(userID int, startDate, endDate, roomType, status string, page, pageSize int) (entities.ReservationHistoryResponse, error) {
 	offset := (page - 1) * pageSize
-	data, total, err := u.resRepo.GetHistory(userID, userRole, startDate, endDate, roomType, status, pageSize, offset)
-	return entities.ReservationHistoryResponse{Data: data, TotalData: total}, err
+	data, total, err := u.resRepo.GetHistory(userID, startDate, endDate, roomType, status, pageSize, offset)
+
+	return entities.ReservationHistoryResponse{
+		Message:   "success",
+		Data:      data,
+		TotalData: total,
+	}, err
 }
 
-func (u *reservationUsecase) GetByID(id int) (entities.ReservationByIDResponse, error) {
+// 4. Get By ID
+func (u *reservationUsecase) GetByID(id int) (entities.ReservationDetailResponse, error) {
 	data, err := u.resRepo.GetByID(id)
-	return entities.ReservationByIDResponse{Data: data}, err
-}
-
-func (u *reservationUsecase) UpdateStatus(id, userID int, status string, userRole string) error {
-	targetID := id
-	if targetID == 0 {
-		var err error
-		targetID, err = u.resRepo.GetLatestReservationIDByUserID(userID)
-		if err != nil {
-			return errors.New("reservation not found")
-		}
-	}
-
-	currentData, err := u.resRepo.GetByID(targetID)
-	if err != nil {
-		return err
-	}
-	curStatus := currentData.Status
-
-	switch curStatus {
-	case "booked":
-		if status != "paid" && status != "cancel" {
-			return errors.New("invalid status transition")
-		}
-	case "paid":
-		if status != "cancel" {
-			return errors.New("can only cancel paid reservation")
-		}
-	case "cancel":
-		return errors.New("cannot change canceled reservation")
-	}
-
-	return u.resRepo.UpdateStatus(targetID, status)
-}
-
-func (u *reservationUsecase) GetSchedules(startDate, endDate string, page, pageSize int) (entities.ScheduleResponse, error) {
-	offset := (page - 1) * pageSize
-	data, total, err := u.resRepo.GetSchedules(startDate, endDate, pageSize, offset)
-	return entities.ScheduleResponse{Data: data, TotalData: total}, err
+	return entities.ReservationDetailResponse{
+		Message: "success",
+		Data:    data,
+	}, err
 }
 
 func (u *reservationUsecase) GetUserIDByUsername(username string) (int, error) {
 	return u.resRepo.GetUserIDByUsername(username)
 }
 
+func (u *reservationUsecase) UpdateStatus(id, userID int, status string, userRole string) error {
+	currentData, err := u.resRepo.GetByID(id)
+	if err != nil {
+		return err
+	}
+	if currentData.Status == "cancel" {
+		return errors.New("cannot update canceled reservation")
+	}
+	return u.resRepo.UpdateStatus(id, status)
+}
+
+func (u *reservationUsecase) GetSchedules(startDate, endDate string, page, pageSize int) (entities.ScheduleResponse, error) {
+	offset := (page - 1) * pageSize
+	data, total, err := u.resRepo.GetSchedules(startDate, endDate, pageSize, offset)
+
+	return entities.ScheduleResponse{
+		Message:   "success",
+		Data:      data,
+		TotalData: total,
+	}, err
+}
+
 func (u *reservationUsecase) GetRoomSchedule(roomID int, start, end time.Time) (map[string]interface{}, error) {
-	// 1. Ambil Data Room dulu
 	room, err := u.roomRepo.GetByID(roomID)
 	if err != nil {
 		return nil, errors.New("room not found")
 	}
-
-	// 2. Ambil Schedule
 	schedules, err := u.resRepo.GetReservationsByRoomID(roomID, start, end)
 	if err != nil {
 		return nil, err
 	}
-
-	// 3. Gabungkan Format Response
 	return map[string]interface{}{
 		"room":      room,
 		"schedules": schedules,
-		"date":      start.Format("2006-01-02"), // Info tanggal awal filter
+		"date":      start.Format("2006-01-02"),
 	}, nil
 }

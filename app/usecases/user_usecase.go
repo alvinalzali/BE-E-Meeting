@@ -3,6 +3,7 @@ package usecases
 import (
 	"BE-E-Meeting/app/entities"
 	"BE-E-Meeting/app/repositories"
+	"BE-E-Meeting/app/utils"
 	"errors"
 	"os"
 	"strconv"
@@ -19,7 +20,7 @@ type UserUsecase interface {
 	RequestPasswordReset(email string) (string, error)
 	ResetPassword(token, NewPassword, confirmPassword string) error
 	GetProfile(id int) (entities.GetUser, error)
-	UpdateUser(id int, input entities.UpdateUser) (entities.UpdateUser, error)
+	UpdateUser(id int, input entities.UpdateUser, baseURL string) (entities.UpdateUser, error)
 }
 
 type userUsecase struct {
@@ -107,14 +108,38 @@ func (u *userUsecase) GetProfile(id int) (entities.GetUser, error) {
 	return user, nil
 }
 
-func (u *userUsecase) UpdateUser(id int, input entities.UpdateUser) (entities.UpdateUser, error) {
-	// 1. Ambil data user lama dulu (untuk perbandingan)
+// Tambahkan parameter baseURL
+func (u *userUsecase) UpdateUser(id int, input entities.UpdateUser, baseURL string) (entities.UpdateUser, error) {
+
+	// 1. Ambil data lama
 	oldUser, err := u.userRepo.GetByID(id)
 	if err != nil {
 		return input, errors.New("user not found")
 	}
 
-	// 2. Isi data kosong dengan data lama (agar tidak tertimpa string kosong)
+	// 2. LOGIC PEMINDAHAN GAMBAR
+	// Cek apakah ada request update avatar?
+	if input.Avatar_url != "" {
+
+		// Panggil Utils untuk memindah file fisik
+		newAvatarURL, err := utils.ProcessImageMove(oldUser.Avatar_url, input.Avatar_url, baseURL, "users")
+		if err != nil {
+			return input, err
+		}
+
+		// ============================================================
+		// [PERBAIKAN PENTING DISINI]
+		// Kamu wajib menimpa input.Avatar_url dengan URL baru (permanent)
+		// Jika baris ini hilang, database akan menyimpan link /temp/
+		// ============================================================
+		input.Avatar_url = newAvatarURL
+
+	} else {
+		// Jika user tidak kirim avatar baru, paksa pakai yang lama
+		input.Avatar_url = oldUser.Avatar_url
+	}
+
+	// 3. Fallback data lain (isi data kosong dengan data lama)
 	if input.Username == "" {
 		input.Username = oldUser.Username
 	}
@@ -123,9 +148,6 @@ func (u *userUsecase) UpdateUser(id int, input entities.UpdateUser) (entities.Up
 	}
 	if input.Name == "" {
 		input.Name = oldUser.Name
-	}
-	if input.Avatar_url == "" {
-		input.Avatar_url = oldUser.Avatar_url
 	}
 	if input.Lang == "" {
 		input.Lang = oldUser.Lang
@@ -137,38 +159,38 @@ func (u *userUsecase) UpdateUser(id int, input entities.UpdateUser) (entities.Up
 		input.Status = oldUser.Status
 	}
 
-	// Set waktu update
 	input.Updated_at = time.Now().Format(time.RFC3339)
 
-	// 3. Cek Uniqueness Username (Jika username berubah)
+	// 4. Validasi Unique (Username & Email)
 	if input.Username != oldUser.Username {
 		exists, err := u.userRepo.CheckUsernameExists(input.Username, id)
 		if err != nil {
 			return input, err
 		}
 		if exists {
-			// Jika sudah ada, kembalikan ke username lama (atau bisa return error)
-			input.Username = oldUser.Username
+			return input, errors.New("username already exists")
 		}
 	}
 
-	// 4. Cek Uniqueness Email (Jika email berubah)
 	if input.Email != oldUser.Email {
 		exists, err := u.userRepo.CheckEmailExists(input.Email, id)
 		if err != nil {
 			return input, err
 		}
 		if exists {
-			input.Email = oldUser.Email
+			return input, errors.New("email already exists")
 		}
 	}
 
 	// 5. Simpan ke Database
+	// Karena kita sudah melakukan 'input.Avatar_url = newAvatarURL' di atas,
+	// maka yang tersimpan ke DB adalah link permanent.
 	err = u.userRepo.Update(input, id)
 	if err != nil {
 		return input, err
 	}
 
+	// 6. Return input (yang sekarang sudah berisi URL permanent)
 	return input, nil
 }
 

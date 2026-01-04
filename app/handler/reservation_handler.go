@@ -3,10 +3,10 @@ package handler
 import (
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"BE-E-Meeting/app/entities"
+	"BE-E-Meeting/app/middleware"
 	"BE-E-Meeting/app/usecases"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,15 +22,17 @@ func NewReservationHandler(usecase usecases.ReservationUsecase) *ReservationHand
 }
 
 // CalculateReservation godoc
-// @Summary Calculate reservation
-// @Description Calculate reservation price details
+// @Summary Calculate reservation price
+// @Description Simulate price calculation before booking to get total cost
 // @Tags Reservation
 // @Produce json
-// @Param room_id query string true "Room ID"
-// @Param snack_id query string true "Snack ID (0 if none)"
-// @Param startTime query string true "Start Time (RFC3339)"
-// @Param endTime query string true "End Time (RFC3339)"
-// @Param participant query string true "Participant Count"
+// @Param room_id query int true "Room ID"
+// @Param snack_id query int false "Snack ID (0 if none)"
+// @Param startTime query string true "Start Time (RFC3339 format: 2025-10-20T09:00:00Z)"
+// @Param endTime query string true "End Time (RFC3339 format: 2025-10-20T11:00:00Z)"
+// @Param participant query int true "Participant Count"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
 // @Security BearerAuth
 // @Router /reservation/calculation [get]
 func (h *ReservationHandler) CalculateReservation(c echo.Context) error {
@@ -43,17 +45,23 @@ func (h *ReservationHandler) CalculateReservation(c echo.Context) error {
 
 	participant, _ := strconv.Atoi(c.QueryParam("participant"))
 	snackID, _ := strconv.Atoi(c.QueryParam("snack_id"))
+
 	addSnack := false
 	if snackID > 0 {
 		addSnack = true
 	}
 
-	// Menggunakan struct yang sudah diperbaiki (RoomReservationRequest)
-	req := entities.ReservationRequestBody{
+	// [PENTING] Menggunakan entities.RoomReservationRequest dari room.go
+	req := entities.ReservationRequest{
 		Rooms: []entities.RoomReservationRequest{{
-			ID: roomID, StartTime: startTime, EndTime: endTime,
-			Participant: participant, AddSnack: addSnack, SnackID: snackID,
+			ID:          roomID,
+			StartTime:   startTime,
+			EndTime:     endTime,
+			SnackID:     snackID,
+			Participant: participant,
+			AddSnack:    addSnack,
 		}},
+		TotalParticipants: participant,
 	}
 
 	res, err := h.usecase.Calculate(req)
@@ -65,34 +73,37 @@ func (h *ReservationHandler) CalculateReservation(c echo.Context) error {
 
 // CreateReservation godoc
 // @Summary Create a new reservation
-// @Description Create a new reservation transaction
+// @Description Create a new reservation transaction (Booking)
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param request body entities.ReservationRequestBody true "Reservation request body"
-// @Success 200 {object} map[string]interface{}
+// @Param request body entities.ReservationRequest true "Reservation Data"
+// @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Security BearerAuth
 // @Router /reservation [post]
 func (h *ReservationHandler) CreateReservation(c echo.Context) error {
-	var req entities.ReservationRequestBody
+	var req entities.ReservationRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid format"})
 	}
 
-	// Ambil User ID dari Token (Supaya tidak dimanipulasi di body)
+	// Ambil User ID dari Token
 	userToken := c.Get("user").(*jwt.Token)
 	claims := userToken.Claims.(jwt.MapClaims)
-	username := claims["username"].(string)
 
-	userID, err := h.usecase.GetUserIDByUsername(username)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "user not found"})
+	if username, ok := claims["username"].(string); ok {
+		userID, err := h.usecase.GetUserIDByUsername(username)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, echo.Map{"message": "user not found"})
+		}
+		req.UserID = userID
+	} else {
+		req.UserID = middleware.ExtractTokenUserID(c)
 	}
-	req.UserID = userID
 
-	err = h.usecase.Create(req)
+	err := h.usecase.Create(req)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": err.Error()})
 	}
@@ -100,74 +111,59 @@ func (h *ReservationHandler) CreateReservation(c echo.Context) error {
 }
 
 // GetHistory godoc
-// @Summary Get meeting reservation history
-// @Description Retrieve meeting reservation history filtered by filters
+// @Summary Get reservation history
+// @Description Get reservation history with filters and pagination
 // @Tags Reservation
 // @Produce json
 // @Param startDate query string false "Start Date (YYYY-MM-DD)"
 // @Param endDate query string false "End Date (YYYY-MM-DD)"
 // @Param type query string false "Room Type (small/medium/large)"
 // @Param status query string false "Status (booked/paid/cancel)"
-// @Param page query int false "Page number"
-// @Param pageSize query int false "Page size"
+// @Param page query int false "Page number (default: 1)"
+// @Param pageSize query int false "Page size (default: 10)"
 // @Success 200 {object} entities.ReservationHistoryResponse
 // @Failure 500 {object} map[string]string
 // @Security BearerAuth
 // @Router /reservation/history [get]
 func (h *ReservationHandler) GetHistory(c echo.Context) error {
-	userToken := c.Get("user").(*jwt.Token)
-	claims := userToken.Claims.(jwt.MapClaims)
-	username := claims["username"].(string)
-
-	userID, err := h.usecase.GetUserIDByUsername(username)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"message": "user not found"})
-	}
-
-	// Simple Role Check
-	userRole := "user"
-	if roleStr, ok := claims["role"].(string); ok {
-		if strings.Contains(roleStr, "admin") {
-			userRole = "admin"
-		}
-	} else if roles, ok := claims["role"].([]interface{}); ok {
-		for _, r := range roles {
-			if r.(string) == "admin" {
-				userRole = "admin"
-				break
-			}
-		}
-	}
-
-	page, _ := strconv.Atoi(c.QueryParam("page"))
-	if page < 1 {
-		page = 1
-	}
-	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
-	if pageSize < 1 {
-		pageSize = 10
-	}
-
 	startDate := c.QueryParam("startDate")
 	endDate := c.QueryParam("endDate")
 	roomType := c.QueryParam("type")
 	status := c.QueryParam("status")
 
-	res, err := h.usecase.GetHistory(userID, userRole, startDate, endDate, roomType, status, page, pageSize)
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	pageSize, _ := strconv.Atoi(c.QueryParam("pageSize"))
+
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	userID := middleware.ExtractTokenUserID(c)
+
+	response, err := h.usecase.GetHistory(userID, startDate, endDate, roomType, status, page, pageSize)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{"message": err.Error()})
 	}
 
-	return c.JSON(http.StatusOK, res)
+	response.Page = page
+	response.PageSize = pageSize
+	if response.TotalData > 0 {
+		response.TotalPage = (response.TotalData + pageSize - 1) / pageSize
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
 
 // GetReservationByID godoc
-// @Summary Detail reservation by ID
-// @Description Get full reservation detail (master + reservation details) by reservation ID
+// @Summary Get reservation detail
+// @Description Get full detail of a reservation by ID
 // @Tags Reservation
 // @Produce json
 // @Param id path int true "Reservation ID"
-// @Success 200 {object} entities.ReservationByIDResponse
+// @Success 200 {object} entities.ReservationDetailResponse
 // @Failure 404 {object} map[string]string
 // @Security BearerAuth
 // @Router /reservation/{id} [get]
@@ -186,11 +182,11 @@ func (h *ReservationHandler) GetReservationByID(c echo.Context) error {
 
 // UpdateReservationStatus godoc
 // @Summary Update reservation status
-// @Description Update status of a reservation (booked/cancel/paid)
+// @Description Update status (booked -> paid/cancel)
 // @Tags Reservation
 // @Accept json
 // @Produce json
-// @Param reservation body entities.UpdateReservationRequest true "Reservation details"
+// @Param body body entities.UpdateReservationRequest true "Status Update"
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} map[string]string
 // @Security BearerAuth
@@ -201,13 +197,9 @@ func (h *ReservationHandler) UpdateReservationStatus(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid format"})
 	}
 
-	// Ambil ID dari token
-	userToken := c.Get("user").(*jwt.Token)
-	claims := userToken.Claims.(jwt.MapClaims)
-	username := claims["username"].(string)
-	userID, _ := h.usecase.GetUserIDByUsername(username)
+	userID := middleware.ExtractTokenUserID(c)
 
-	err := h.usecase.UpdateStatus(req.ReservationID, userID, req.Status, "user") // Role bisa disesuaikan
+	err := h.usecase.UpdateStatus(req.ReservationID, userID, req.Status, "user")
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"message": err.Error()})
 	}
@@ -216,16 +208,16 @@ func (h *ReservationHandler) UpdateReservationStatus(c echo.Context) error {
 }
 
 // GetReservationSchedules godoc
-// @Summary Get reservation schedules
-// @Description Get all reservation schedules between date range with pagination
+// @Summary Get all schedules
+// @Description Get reservation schedules for all rooms (Admin Dashboard)
 // @Tags Reservation
-// @Accept json
 // @Produce json
-// @Param startDate query string true "Start date (YYYY-MM-DD)"
-// @Param endDate query string true "End date (YYYY-MM-DD)"
+// @Param startDate query string false "Start Date (YYYY-MM-DD)"
+// @Param endDate query string false "End Date (YYYY-MM-DD)"
 // @Param page query int false "Page number (default: 1)"
 // @Param pageSize query int false "Page size (default: 10)"
 // @Success 200 {object} entities.ScheduleResponse
+// @Failure 500 {object} map[string]string
 // @Security BearerAuth
 // @Router /reservations/schedules [get]
 func (h *ReservationHandler) GetReservationSchedules(c echo.Context) error {
@@ -249,12 +241,12 @@ func (h *ReservationHandler) GetReservationSchedules(c echo.Context) error {
 }
 
 // GetRoomReservationSchedule godoc
-// @Summary Get room reservation schedule
-// @Description Get all reservations for a specific room
+// @Summary Get specific room schedule
+// @Description Get schedule list for a specific room
 // @Tags Room
 // @Produce json
-// @Param id path string true "Room ID"
-// @Param date query string false "Date filter (YYYY-MM-DD)"
+// @Param id path int true "Room ID"
+// @Param date query string false "Date Filter (YYYY-MM-DD)"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -262,18 +254,12 @@ func (h *ReservationHandler) GetReservationSchedules(c echo.Context) error {
 // @Router /rooms/{id}/reservation [get]
 func (h *ReservationHandler) GetRoomReservationSchedule(c echo.Context) error {
 	roomID, _ := strconv.Atoi(c.Param("id"))
-	startDTStr := c.QueryParam("start_datetime")
-	endDTStr := c.QueryParam("end_datetime")
 	dateStr := c.QueryParam("date")
 
 	var startDT, endDT time.Time
 	var err error
 
-	// Logic parsing tanggal (sama seperti di main.go lama)
-	if startDTStr != "" && endDTStr != "" {
-		startDT, _ = time.Parse(time.RFC3339, startDTStr)
-		endDT, _ = time.Parse(time.RFC3339, endDTStr)
-	} else if dateStr != "" {
+	if dateStr != "" {
 		startDT, err = time.Parse("2006-01-02", dateStr)
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, echo.Map{"message": "invalid date"})

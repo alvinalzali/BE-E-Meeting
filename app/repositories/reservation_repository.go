@@ -12,13 +12,12 @@ import (
 type ReservationRepository interface {
 	CheckAvailability(roomID int, startTime, endTime time.Time) (bool, error)
 	Create(reservation entities.ReservationData, details []entities.ReservationDetailData) error
-	GetHistory(userID int, userRole, startDate, endDate, roomType, status string, limit, offset int) ([]entities.ReservationHistoryData, int, error)
-	GetByID(id int) (entities.ReservationByIDData, error)
+	GetHistory(userID int, startDate, endDate, roomType, status string, limit, offset int) ([]entities.ReservationHistoryData, int, error)
+	GetByID(id int) (entities.ReservationHistoryData, error)
 	UpdateStatus(id int, status string) error
-	GetSchedules(startDate, endDate string, limit, offset int) ([]entities.RoomScheduleInfo, int, error)
 	GetUserIDByUsername(username string) (int, error)
-	GetLatestReservationIDByUserID(userID int) (int, error)
-	GetReservationsByRoomID(roomID int, start, end time.Time) ([]entities.RoomSchedule, error) // <--- BARU
+	GetSchedules(startDate, endDate string, limit, offset int) ([]entities.RoomScheduleInfo, int, error)
+	GetReservationsByRoomID(roomID int, start, end time.Time) ([]entities.RoomSchedule, error)
 }
 
 type reservationRepository struct {
@@ -29,50 +28,31 @@ func NewReservationRepository(db *sql.DB) ReservationRepository {
 	return &reservationRepository{db: db}
 }
 
-// 1. Cek Availability
+// 1. Availability
 func (r *reservationRepository) CheckAvailability(roomID int, startTime, endTime time.Time) (bool, error) {
 	var existing int
-	query := `
-		SELECT COUNT(*) 
-		FROM reservation_details 
-		WHERE room_id = $1
-		AND (start_at, end_at) OVERLAPS ($2, $3)
-	`
+	query := `SELECT COUNT(*) FROM reservation_details WHERE room_id = $1 AND (start_at, end_at) OVERLAPS ($2, $3)`
 	err := r.db.QueryRow(query, roomID, startTime, endTime).Scan(&existing)
-	if err != nil {
-		return false, err
-	}
-	return existing == 0, nil
+	return existing == 0, err
 }
 
-// 2. Create (Transaction)
+// 2. Create
 func (r *reservationRepository) Create(res entities.ReservationData, details []entities.ReservationDetailData) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return err
 	}
-
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
+	defer tx.Rollback()
 
 	var reservationID int
 	queryHeader := `
-		INSERT INTO reservations (
-			user_id, contact_name, contact_phone, contact_company,
-			note, status_reservation, subtotal_room, subtotal_snack, 
-			total, duration_minute, total_participants, add_snack, created_at, updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, 'booked', $6, $7, $8, $9, $10, $11, NOW(), NOW())
-		RETURNING id
-	`
+		INSERT INTO reservations (user_id, contact_name, contact_phone, contact_company, note, status_reservation, subtotal_room, subtotal_snack, total, duration_minute, total_participants, add_snack, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, 'booked', $6, $7, $8, 0, $9, $10, NOW(), NOW()) RETURNING id`
+
+	// Perhatikan mapping $ nya
 	err = tx.QueryRow(queryHeader,
 		res.UserID, res.ContactName, res.ContactPhone, res.ContactCompany, res.Note,
-		res.SubTotalRoom, res.SubTotalSnack, res.Total, res.DurationMinute, res.TotalParticipants, res.AddSnack,
+		res.SubTotalRoom, res.SubTotalSnack, res.Total, res.TotalParticipants, res.AddSnack,
 	).Scan(&reservationID)
 
 	if err != nil {
@@ -80,74 +60,74 @@ func (r *reservationRepository) Create(res entities.ReservationData, details []e
 	}
 
 	queryDetail := `
-		INSERT INTO reservation_details (
-			reservation_id, room_id, room_name, room_price,
-			snack_id, snack_name, snack_price,
-			duration_minute, total_participants,
-			total_room, total_snack,
-			start_at, end_at,
-			created_at, updated_at
-		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())
-	`
+		INSERT INTO reservation_details (reservation_id, room_id, room_name, room_price, snack_id, snack_name, snack_price, duration_minute, total_participants, total_room, total_snack, start_at, end_at, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())`
 
 	for _, d := range details {
-		_, err = tx.Exec(queryDetail,
-			reservationID,
-			d.RoomID, d.RoomName, d.RoomPrice,
-			d.SnackID, d.SnackName, d.SnackPrice,
-			d.DurationMinute, d.TotalParticipants,
-			d.TotalRoom, d.TotalSnack,
-			d.StartAt, d.EndAt,
-		)
+		_, err = tx.Exec(queryDetail, reservationID, d.RoomID, d.RoomName, d.RoomPrice, d.SnackID, d.SnackName, d.SnackPrice, d.DurationMinute, d.TotalParticipants, d.TotalRoom, d.TotalSnack, d.StartAt, d.EndAt)
 		if err != nil {
 			return err
 		}
 	}
-
-	return nil
+	return tx.Commit()
 }
 
-// 3. Get History (Dengan Pagination & Real Count)
-func (r *reservationRepository) GetHistory(userID int, userRole, startDate, endDate, roomType, status string, limit, offset int) ([]entities.ReservationHistoryData, int, error) {
-
-	filterSQL := " WHERE 1=1"
-	var args []interface{}
-	argIdx := 1
-
-	if userRole == "user" {
-		filterSQL += fmt.Sprintf(" AND r.user_id = $%d", argIdx)
-		args = append(args, userID)
-		argIdx++
-	}
-	if startDate != "" {
-		filterSQL += fmt.Sprintf(" AND r.created_at >= $%d", argIdx)
-		args = append(args, startDate)
-		argIdx++
-	}
-	if endDate != "" {
-		filterSQL += fmt.Sprintf(" AND r.created_at <= $%d", argIdx)
-		args = append(args, endDate)
-		argIdx++
-	}
-	if roomType != "" {
-		filterSQL += fmt.Sprintf(" AND rm.room_type = $%d", argIdx)
-		args = append(args, roomType)
-		argIdx++
-	}
-	if status != "" {
-		filterSQL += fmt.Sprintf(" AND r.status_reservation = $%d", argIdx)
-		args = append(args, status)
-		argIdx++
-	}
-
-	// Count Query
+// 3. Get History
+func (r *reservationRepository) GetHistory(userID int, startDate, endDate, roomType, status string, limit, offset int) ([]entities.ReservationHistoryData, int, error) {
+	// Query Count (Perbaikan: rm.type -> rm.room_type)
 	countQuery := `
 		SELECT COUNT(DISTINCT r.id) 
+		FROM reservations r 
+		JOIN reservation_details rd ON r.id = rd.reservation_id
+		JOIN rooms rm ON rd.room_id = rm.id 
+		WHERE 1=1 `
+
+	// Query Data (Perbaikan: rm.type -> rm.room_type)
+	query := `
+		SELECT 
+			r.id, r.contact_name, r.contact_phone, r.contact_company, 
+			r.subtotal_snack, r.subtotal_room, r.total, r.status_reservation, r.created_at,
+			rd.room_id, rm.name, rm.room_type, rm.price_per_hour, rd.total_room, rd.total_snack
 		FROM reservations r
-		JOIN reservation_details rd ON rd.reservation_id = r.id
-		JOIN rooms rm ON rm.id = rd.room_id
-	` + filterSQL
+		JOIN reservation_details rd ON r.id = rd.reservation_id
+		JOIN rooms rm ON rd.room_id = rm.id
+		WHERE 1=1 `
+
+	var args []interface{}
+	argCount := 1
+
+	// Filter Logic
+	if userID != 0 {
+		filter := fmt.Sprintf(" AND r.user_id = $%d", argCount)
+		countQuery += filter
+		query += filter
+		args = append(args, userID)
+		argCount++
+	}
+	if startDate != "" && endDate != "" {
+		filter := fmt.Sprintf(" AND DATE(rd.start_at) >= $%d AND DATE(rd.end_at) <= $%d", argCount, argCount+1)
+		countQuery += filter
+		query += filter
+		args = append(args, startDate, endDate)
+		argCount += 2
+	}
+
+	// Perbaikan Filter Room Type (rm.type -> rm.room_type)
+	if roomType != "" {
+		filter := fmt.Sprintf(" AND rm.room_type = $%d", argCount)
+		countQuery += filter
+		query += filter
+		args = append(args, roomType)
+		argCount++
+	}
+
+	if status != "" {
+		filter := fmt.Sprintf(" AND r.status_reservation = $%d", argCount)
+		countQuery += filter
+		query += filter
+		args = append(args, status)
+		argCount++
+	}
 
 	var totalData int
 	err := r.db.QueryRow(countQuery, args...).Scan(&totalData)
@@ -155,23 +135,7 @@ func (r *reservationRepository) GetHistory(userID int, userRole, startDate, endD
 		return nil, 0, err
 	}
 
-	// Main Query
-	query := `
-		SELECT 
-			r.id, r.contact_name, r.contact_phone, r.contact_company,
-			COALESCE(SUM(rd.snack_price),0) AS sub_total_snack,
-			COALESCE(SUM(rd.room_price),0) AS sub_total_room,
-			COALESCE(SUM(rd.snack_price + rd.room_price),0) AS total,
-			r.status_reservation, r.created_at, r.updated_at
-		FROM reservations r
-		JOIN reservation_details rd ON rd.reservation_id = r.id
-		JOIN rooms rm ON rm.id = rd.room_id
-	` + filterSQL + fmt.Sprintf(`
-		GROUP BY r.id, r.contact_name, r.contact_phone, r.contact_company, r.status_reservation, r.created_at, r.updated_at
-		ORDER BY r.created_at DESC
-		LIMIT $%d OFFSET $%d
-	`, argIdx, argIdx+1)
-
+	query += fmt.Sprintf(" ORDER BY r.created_at DESC LIMIT $%d OFFSET $%d", argCount, argCount+1)
 	args = append(args, limit, offset)
 
 	rows, err := r.db.Query(query, args...)
@@ -180,97 +144,100 @@ func (r *reservationRepository) GetHistory(userID int, userRole, startDate, endD
 	}
 	defer rows.Close()
 
-	var histories []entities.ReservationHistoryData
+	resultMap := make(map[int]*entities.ReservationHistoryData)
+	var order []int
+
 	for rows.Next() {
-		var h entities.ReservationHistoryData
-		if err := rows.Scan(&h.ID, &h.Name, &h.PhoneNumber, &h.Company, &h.SubTotalSnack, &h.SubTotalRoom, &h.Total, &h.Status, &h.CreatedAt, &h.UpdatedAt); err != nil {
+		var resID int
+		var name, phone, company, stat string
+		var subSnack, subRoom, total float64
+		var createdAt time.Time
+		var roomID int
+		var roomName, rType string
+		var rPrice, rTotal, rSnackTotal float64
+
+		err := rows.Scan(&resID, &name, &phone, &company, &subSnack, &subRoom, &total, &stat, &createdAt,
+			&roomID, &roomName, &rType, &rPrice, &rTotal, &rSnackTotal)
+		if err != nil {
 			return nil, 0, err
 		}
 
-		roomRows, _ := r.db.Query(`
-			SELECT 
-				rm.id, rm.price_per_hour, rm.name, rm.room_type, 
-				COALESCE(rd.room_price,0), COALESCE(rd.snack_price,0) 
-			FROM reservation_details rd 
-			JOIN rooms rm ON rm.id = rd.room_id 
-			WHERE rd.reservation_id = $1
-		`, h.ID)
-
-		for roomRows.Next() {
-			var rd entities.ReservationHistoryRoomDetail
-			roomRows.Scan(&rd.ID, &rd.Price, &rd.Name, &rd.Type, &rd.TotalRoom, &rd.TotalSnack)
-			h.Rooms = append(h.Rooms, rd)
+		if _, exists := resultMap[resID]; !exists {
+			resultMap[resID] = &entities.ReservationHistoryData{
+				ID: resID, Name: name, PhoneNumber: phone, Company: company,
+				SubTotalSnack: subSnack, SubTotalRoom: subRoom, Total: total, Status: stat,
+				CreatedAt: createdAt,
+				Rooms:     []entities.ReservationRoomDetail{},
+			}
+			order = append(order, resID)
 		}
-		roomRows.Close()
 
-		histories = append(histories, h)
+		resultMap[resID].Rooms = append(resultMap[resID].Rooms, entities.ReservationRoomDetail{
+			ID: roomID, Name: roomName, Type: rType, Price: rPrice, TotalRoom: rTotal, TotalSnack: rSnackTotal,
+		})
 	}
 
-	return histories, totalData, nil
+	var finalResult []entities.ReservationHistoryData
+	for _, id := range order {
+		finalResult = append(finalResult, *resultMap[id])
+	}
+
+	return finalResult, totalData, nil
 }
 
 // 4. Get By ID
-func (r *reservationRepository) GetByID(id int) (entities.ReservationByIDData, error) {
-	var data entities.ReservationByIDData
-	var status sql.NullString
+func (r *reservationRepository) GetByID(id int) (entities.ReservationHistoryData, error) {
+	var data entities.ReservationHistoryData
 
-	err := r.db.QueryRow(`
-		SELECT contact_name, contact_phone, contact_company, COALESCE(subtotal_room, 0), COALESCE(subtotal_snack, 0), COALESCE(total, 0), COALESCE(status_reservation::text, '')
-		FROM reservations WHERE id = $1
-	`, id).Scan(&data.PersonalData.Name, &data.PersonalData.PhoneNumber, &data.PersonalData.Company, &data.SubTotalRoom, &data.SubTotalSnack, &data.Total, &status)
+	queryHeader := `
+		SELECT id, contact_name, contact_phone, contact_company, subtotal_snack, subtotal_room, total, status_reservation, created_at 
+		FROM reservations WHERE id = $1`
 
+	err := r.db.QueryRow(queryHeader, id).Scan(
+		&data.ID, &data.Name, &data.PhoneNumber, &data.Company,
+		&data.SubTotalSnack, &data.SubTotalRoom, &data.Total, &data.Status, &data.CreatedAt,
+	)
 	if err != nil {
 		return data, err
 	}
-	data.Status = status.String
 
-	rows, err := r.db.Query(`
-		SELECT COALESCE(r.name,''), COALESCE(r.price_per_hour,0), COALESCE(r.picture_url,''), COALESCE(r.capacity,0), COALESCE(r.room_type::text,'small'),
-			   COALESCE(rd.total_snack,0), COALESCE(rd.total_room,0), rd.start_at, rd.end_at, COALESCE(rd.duration_minute,0), COALESCE(rd.total_participants,0),
-			   s.id, COALESCE(s.name,''), COALESCE(s.unit::text,''), COALESCE(s.price,0), COALESCE(s.category::text,'')
+	queryDetails := `
+		SELECT rd.room_id, r.name, r.room_type, r.price_per_hour, rd.total_room, rd.total_snack
 		FROM reservation_details rd
-		LEFT JOIN rooms r ON rd.room_id = r.id
-		LEFT JOIN snacks s ON rd.snack_id = s.id
-		WHERE rd.reservation_id = $1
-	`, id)
+		JOIN rooms r ON rd.room_id = r.id
+		WHERE rd.reservation_id = $1`
+
+	rows, err := r.db.Query(queryDetails, id)
 	if err != nil {
 		return data, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var room entities.RoomInfo
-		var snack entities.Snack
-		var startAt, endAt sql.NullTime
-		rows.Scan(&room.Name, &room.PricePerHour, &room.ImageURL, &room.Capacity, &room.Type, &room.TotalSnack, &room.TotalRoom, &startAt, &endAt, &room.Duration, &room.Participant, &snack.ID, &snack.Name, &snack.Unit, &snack.Price, &snack.Category)
-
-		if startAt.Valid {
-			room.StartTime = startAt.Time.Format(time.RFC3339)
-		}
-		if endAt.Valid {
-			room.EndTime = endAt.Time.Format(time.RFC3339)
-		}
-		if snack.ID > 0 {
-			room.Snack = &snack
-		}
-
+		var room entities.ReservationRoomDetail
+		rows.Scan(&room.ID, &room.Name, &room.Type, &room.Price, &room.TotalRoom, &room.TotalSnack)
 		data.Rooms = append(data.Rooms, room)
 	}
 
 	return data, nil
 }
 
-// 5. Update Status
+func (r *reservationRepository) GetUserIDByUsername(username string) (int, error) {
+	var id int
+	err := r.db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&id)
+	return id, err
+}
+
 func (r *reservationRepository) UpdateStatus(id int, status string) error {
-	_, err := r.db.Exec(`UPDATE reservations SET status_reservation=$1::status_reservation WHERE id=$2`, status, id)
+	_, err := r.db.Exec(`UPDATE reservations SET status_reservation=$1 WHERE id=$2`, status, id)
 	return err
 }
 
-// 6. Get Schedules
 func (r *reservationRepository) GetSchedules(startDate, endDate string, limit, offset int) ([]entities.RoomScheduleInfo, int, error) {
 	filterSQL := " WHERE 1=1 "
 	args := []interface{}{}
 	argIdx := 1
+
 	if startDate != "" {
 		filterSQL += fmt.Sprintf(" AND DATE(rd.start_at) >= $%d", argIdx)
 		args = append(args, startDate)
@@ -296,7 +263,11 @@ func (r *reservationRepository) GetSchedules(startDate, endDate string, limit, o
 
 	query := `
 		SELECT r.id, r.name, res.contact_company, rd.start_at, rd.end_at,
-			CASE WHEN rd.end_at < NOW() THEN 'Done' WHEN rd.start_at <= NOW() AND rd.end_at >= NOW() THEN 'In Progress' ELSE 'Up Coming' END as status
+			CASE 
+				WHEN rd.end_at < NOW() THEN 'Done' 
+				WHEN rd.start_at <= NOW() AND rd.end_at >= NOW() THEN 'In Progress' 
+				ELSE 'Up Coming' 
+			END as status
 		FROM reservation_details rd
 		JOIN rooms r ON r.id = rd.room_id
 		LEFT JOIN reservations res ON rd.reservation_id = res.id
@@ -319,9 +290,17 @@ func (r *reservationRepository) GetSchedules(startDate, endDate string, limit, o
 		rows.Scan(&roomID, &roomName, &comp, &start, &end, &st)
 
 		if _, exists := scheduleMap[roomID]; !exists {
-			scheduleMap[roomID] = &entities.RoomScheduleInfo{ID: strconv.Itoa(roomID), RoomName: roomName, CompanyName: comp.String}
+			scheduleMap[roomID] = &entities.RoomScheduleInfo{
+				ID:          strconv.Itoa(roomID),
+				RoomName:    roomName,
+				CompanyName: comp.String,
+			}
 		}
-		scheduleMap[roomID].Schedules = append(scheduleMap[roomID].Schedules, entities.Schedule{StartTime: start.Format(time.RFC3339), EndTime: end.Format(time.RFC3339), Status: st})
+		scheduleMap[roomID].Schedules = append(scheduleMap[roomID].Schedules, entities.Schedule{
+			StartTime: start.Format(time.RFC3339),
+			EndTime:   end.Format(time.RFC3339),
+			Status:    st,
+		})
 	}
 
 	var results []entities.RoomScheduleInfo
@@ -332,33 +311,16 @@ func (r *reservationRepository) GetSchedules(startDate, endDate string, limit, o
 	return results, totalData, nil
 }
 
-// 7. Helpers
-func (r *reservationRepository) GetUserIDByUsername(username string) (int, error) {
-	var id int
-	err := r.db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&id)
-	return id, err
-}
-
-func (r *reservationRepository) GetLatestReservationIDByUserID(userID int) (int, error) {
-	var id int
-	err := r.db.QueryRow(`SELECT id FROM reservations WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1`, userID).Scan(&id)
-	return id, err
-}
-
 func (r *reservationRepository) GetReservationsByRoomID(roomID int, start, end time.Time) ([]entities.RoomSchedule, error) {
-	var rows *sql.Rows
-	var err error
-
-	// query jadwal yang bentrok
 	query := `
-        SELECT rd.id, rd.start_at, rd.end_at, r.status_reservation, rd.total_participants 
-        FROM reservation_details rd 
-        JOIN reservations r ON rd.reservation_id = r.id 
-        WHERE rd.room_id = $1 
-        AND (rd.start_at, rd.end_at) OVERLAPS ($2, $3) 
-        ORDER BY rd.start_at ASC
-    `
-	rows, err = r.db.Query(query, roomID, start, end)
+		SELECT rd.id, rd.start_at, rd.end_at, r.status_reservation, rd.total_participants 
+		FROM reservation_details rd 
+		JOIN reservations r ON rd.reservation_id = r.id 
+		WHERE rd.room_id = $1 
+		AND (rd.start_at, rd.end_at) OVERLAPS ($2, $3) 
+		ORDER BY rd.start_at ASC
+	`
+	rows, err := r.db.Query(query, roomID, start, end)
 	if err != nil {
 		return nil, err
 	}

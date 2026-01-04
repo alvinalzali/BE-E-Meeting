@@ -1,132 +1,134 @@
 package handler
 
-import (
-	"fmt"
-	"log"
-	"os"
-	"path/filepath"
-	"strings"
+// mentahan untuk fix image lama, temp dan ke assets
 
-	"github.com/labstack/echo/v4"
-)
+// import (
+// 	"fmt"
+// 	"log"
+// 	"os"
+// 	"path/filepath"
+// 	"strings"
 
-func HandleAvatarUpdate(c echo.Context, userID int, oldAvatarURL, newAvatarURL string) (string, error) {
+// 	"github.com/labstack/echo/v4"
+// )
 
-	log.Printf("[INFO] [handleAvatarUpdate] user_id=%d avatar update requested", userID)
+// func HandleAvatarUpdate(c echo.Context, userID int, oldAvatarURL, newAvatarURL string) (string, error) {
 
-	//jika avatar tidak berubah, langsung return file lama
-	if newAvatarURL == "" || newAvatarURL == oldAvatarURL {
-		return oldAvatarURL, nil
-	}
+// 	log.Printf("[INFO] [handleAvatarUpdate] user_id=%d avatar update requested", userID)
 
-	fileName := filepath.Base(newAvatarURL)
+// 	//jika avatar tidak berubah, langsung return file lama
+// 	if newAvatarURL == "" || newAvatarURL == oldAvatarURL {
+// 		return oldAvatarURL, nil
+// 	}
 
-	tempPath := filepath.Join("./assets/temp", fileName)
-	finalPath := filepath.Join("./assets/image/users", fileName)
+// 	fileName := filepath.Base(newAvatarURL)
 
-	log.Printf("[DEBUG] [handleAvatarUpdate] user_id=%d temp=%s final=%s",
-		userID, tempPath, finalPath,
-	)
+// 	tempPath := filepath.Join("./assets/temp", fileName)
+// 	finalPath := filepath.Join("./assets/image/users", fileName)
 
-	//cek folder final ada
-	_ = os.MkdirAll("./assets/image/users", os.ModePerm)
+// 	log.Printf("[DEBUG] [handleAvatarUpdate] user_id=%d temp=%s final=%s",
+// 		userID, tempPath, finalPath,
+// 	)
 
-	// Cek file temp ada
-	if _, err := os.Stat(tempPath); err != nil {
-		log.Printf("[ERROR] [handleAvatarUpdate] Temp file not found user_id=%d file=%s err=%v",
-			userID, tempPath, err,
-		)
-		return oldAvatarURL, fmt.Errorf("temp file not found")
-	}
+// 	//cek folder final ada
+// 	_ = os.MkdirAll("./assets/image/users", os.ModePerm)
 
-	// Pindahkan file temp ke final
-	err := os.Rename(tempPath, finalPath)
-	if err != nil {
-		log.Printf("[ERROR] [handleAvatarUpdate] Failed moving file user_id=%d src=%s dest=%s err=%v",
-			userID, tempPath, finalPath, err,
-		)
-		return oldAvatarURL, err
-	}
+// 	// Cek file temp ada
+// 	if _, err := os.Stat(tempPath); err != nil {
+// 		log.Printf("[ERROR] [handleAvatarUpdate] Temp file not found user_id=%d file=%s err=%v",
+// 			userID, tempPath, err,
+// 		)
+// 		return oldAvatarURL, fmt.Errorf("temp file not found")
+// 	}
 
-	log.Printf("[INFO] [handleAvatarUpdate] Avatar moved user_id=%d new_file=%s",
-		userID, finalPath,
-	)
+// 	// Pindahkan file temp ke final
+// 	err := os.Rename(tempPath, finalPath)
+// 	if err != nil {
+// 		log.Printf("[ERROR] [handleAvatarUpdate] Failed moving file user_id=%d src=%s dest=%s err=%v",
+// 			userID, tempPath, finalPath, err,
+// 		)
+// 		return oldAvatarURL, err
+// 	}
 
-	// url final
-	baseURL := c.Scheme() + "://" + c.Request().Host
-	finalURL := baseURL + "/assets/image/users/" + fileName
+// 	log.Printf("[INFO] [handleAvatarUpdate] Avatar moved user_id=%d new_file=%s",
+// 		userID, finalPath,
+// 	)
 
-	// hapus file lama
-	if oldAvatarURL != "" && !strings.Contains(oldAvatarURL, "default") {
+// 	// url final
+// 	baseURL := c.Scheme() + "://" + c.Request().Host
+// 	finalURL := baseURL + "/assets/image/users/" + fileName
 
-		oldFile := filepath.Base(oldAvatarURL)
-		oldPath := filepath.Join("./assets/image/users", oldFile)
+// 	// hapus file lama
+// 	if oldAvatarURL != "" && !strings.Contains(oldAvatarURL, "default") {
 
-		log.Printf("[INFO] [handleAvatarUpdate] Removing old avatar user_id=%d file=%s",
-			userID, oldPath,
-		)
+// 		oldFile := filepath.Base(oldAvatarURL)
+// 		oldPath := filepath.Join("./assets/image/users", oldFile)
 
-		if err := os.Remove(oldPath); err != nil {
+// 		log.Printf("[INFO] [handleAvatarUpdate] Removing old avatar user_id=%d file=%s",
+// 			userID, oldPath,
+// 		)
 
-			log.Printf("[WARN] [handleAvatarUpdate] Failed removing old avatar user_id=%d file=%s",
-				userID, oldPath,
-			)
+// 		if err := os.Remove(oldPath); err != nil {
 
-			// rollback ketika gagal dan hapus avatar baru
-			_ = os.Remove(finalPath)
+// 			log.Printf("[WARN] [handleAvatarUpdate] Failed removing old avatar user_id=%d file=%s",
+// 				userID, oldPath,
+// 			)
 
-			return oldAvatarURL, fmt.Errorf("rollback: failed removing old avatar")
-		}
-	}
+// 			// rollback ketika gagal dan hapus avatar baru
+// 			_ = os.Remove(finalPath)
 
-	log.Printf("[INFO] [handleAvatarUpdate] Avatar updated user_id=%d new_url=%s",
-		userID, finalURL,
-	)
+// 			return oldAvatarURL, fmt.Errorf("rollback: failed removing old avatar")
+// 		}
+// 	}
 
-	return finalURL, nil
+// 	log.Printf("[INFO] [handleAvatarUpdate] Avatar updated user_id=%d new_url=%s",
+// 		userID, finalURL,
+// 	)
 
-}
+// 	return finalURL, nil
 
-func HandleRoomImageCreate(c echo.Context, tempURL string, DefaultRoomURL string) (string, error) {
+// }
 
-	// Jika kosong / default, langsung return
-	if tempURL == "" || strings.Contains(tempURL, "default") {
-		log.Println("[INFO] Room image default, skip move")
-		return DefaultRoomURL, nil
-	}
+// func HandleRoomImageCreate(c echo.Context, tempURL string, DefaultRoomURL string) (string, error) {
 
-	// jika kosong, dan contain assets/image/rooms, langsung return
-	if strings.Contains(tempURL, "assets/image/rooms") {
-		return tempURL, nil
-	}
+// 	// Jika kosong / default, langsung return
+// 	if tempURL == "" || strings.Contains(tempURL, "default") {
+// 		log.Println("[INFO] Room image default, skip move")
+// 		return DefaultRoomURL, nil
+// 	}
 
-	fileName := filepath.Base(tempURL)
+// 	// jika kosong, dan contain assets/image/rooms, langsung return
+// 	if strings.Contains(tempURL, "assets/image/rooms") {
+// 		return tempURL, nil
+// 	}
 
-	tempPath := filepath.Join("./assets/temp", fileName)
-	finalPath := filepath.Join("./assets/image/rooms", fileName)
+// 	fileName := filepath.Base(tempURL)
 
-	log.Printf("[INFO] CreateRoom moving image %s → %s\n", tempPath, finalPath)
+// 	tempPath := filepath.Join("./assets/temp", fileName)
+// 	finalPath := filepath.Join("./assets/image/rooms", fileName)
 
-	// Cek file temp
-	if _, err := os.Stat(tempPath); err != nil {
-		log.Printf("[ERROR] Temp room image not found: %s", tempPath)
-		return DefaultRoomURL, fmt.Errorf("temp image not found")
-	}
+// 	log.Printf("[INFO] CreateRoom moving image %s → %s\n", tempPath, finalPath)
 
-	// Buat folder final
-	_ = os.MkdirAll("./assets/image/rooms", os.ModePerm)
+// 	// Cek file temp
+// 	if _, err := os.Stat(tempPath); err != nil {
+// 		log.Printf("[ERROR] Temp room image not found: %s", tempPath)
+// 		return DefaultRoomURL, fmt.Errorf("temp image not found")
+// 	}
 
-	// Pindahkan file
-	if err := os.Rename(tempPath, finalPath); err != nil {
-		log.Printf("[ERROR] Failed move room image: %v", err)
-		return DefaultRoomURL, err
-	}
+// 	// Buat folder final
+// 	_ = os.MkdirAll("./assets/image/rooms", os.ModePerm)
 
-	// Buat URL final
-	baseURL := c.Scheme() + "://" + c.Request().Host
-	finalURL := baseURL + "/assets/image/rooms/" + fileName
+// 	// Pindahkan file
+// 	if err := os.Rename(tempPath, finalPath); err != nil {
+// 		log.Printf("[ERROR] Failed move room image: %v", err)
+// 		return DefaultRoomURL, err
+// 	}
 
-	log.Println("[INFO] Room image success:", finalURL)
+// 	// Buat URL final
+// 	baseURL := c.Scheme() + "://" + c.Request().Host
+// 	finalURL := baseURL + "/assets/image/rooms/" + fileName
 
-	return finalURL, nil
-}
+// 	log.Println("[INFO] Room image success:", finalURL)
+
+// 	return finalURL, nil
+// }

@@ -72,3 +72,24 @@ func RoleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
 		}
 	}
 }
+
+// ==========================================
+// HELPER FUNCTION (UNTUK DIPAKAI DI HANDLER)
+// ==========================================
+
+// ExtractTokenUserID mengambil ID user dari token JWT yang sudah disimpan di context
+func ExtractTokenUserID(c echo.Context) int {
+	// Ambil data user yang diset di c.Set("user", token) tadi
+	user := c.Get("user").(*jwt.Token)
+
+	if user.Valid {
+		claims := user.Claims.(jwt.MapClaims)
+
+		// Perhatikan: Di JWT, angka biasanya dibaca sebagai float64
+		// Pastikan key claims-nya sesuai dengan saat kamu generate token (misal "id" atau "user_id")
+		if idFloat, ok := claims["id"].(float64); ok {
+			return int(idFloat)
+		}
+	}
+	return 0
+}
