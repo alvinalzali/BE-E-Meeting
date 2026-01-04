@@ -7,36 +7,34 @@ Mendukung reservasi ruangan, snack, manajemen user, upload gambar, serta Swagger
 
 ## ✨ Features
 
-### 🔐 Authentication
+### 🔐 Authentication & User
+* Register & Login (JWT access token)
+* **Password Reset** (Request token via email simulation + Reset password)
+* Get User Profile
+* Update User (with avatar upload validation)
 
-* Register user
-* Login (JWT access + refresh token)
-* Reset password (request token + update via token)
-
-### 👥 Users
-
-* Get user by ID
-* Update user (with avatar upload & validation)
-
-### 🏢 Rooms
-
+### 🏢 Rooms (Admin)
 * Create room (with image validation)
-* Update room
+* Update room details
 * Delete room
-* Search + Pagination
-* Room schedule listing
+* Get all rooms (Search + Pagination + Filter by type/capacity)
+* Get specific room detail
 
 ### 🍽 Snacks
-
-* List all snacks
+* List all snacks available
 
 ### 📅 Reservations
+* **Check Availability** (Mencegah bentrok jadwal)
+* **Calculation** (Estimasi harga sebelum booking)
+* Create reservation (Booking ruangan + Snack)
+* Reservation history (Filter by date, status, room type)
+* Update Reservation Status (Admin: `booked` -> `paid`/`cancel`)
+* Get Reservation Detail
+* Room Schedule Listing
 
-* Reservation calculation
-* Create reservation
-* Reservation history (filter + pagination)
-* Get reservation detail
-* Schedule listing
+### 📊 Dashboard (Admin)
+* View Total Omzet, Total Visitor, Total Reservations
+* Room usage percentage statistics
 
 ### 📸 File Upload
 
@@ -63,13 +61,15 @@ Mendukung reservasi ruangan, snack, manajemen user, upload gambar, serta Swagger
 
 ```
 ├── app/
-│   └── entities/
+│   ├── entities/       # Definisi Struct (Model Data & DTO)
+│   ├── handler/        # HTTP Handlers (Controller)
+│   ├── middleware/     # Auth & Role Middleware
+│   ├── repositories/   # Layer Akses Data (Query SQL)
+│   └── usecases/       # Layer Bisnis Logic & Validasi
 ├── assets/
 │   ├── default/
 │   └── image/users/
-├── database/
-│   ├── data.sql
-│   └── table.sql
+├── database/           # Konfigurasi DB & Helper Migrasi
 ├── docs/
 │   ├── docs.go
 │   ├── swagger.json
@@ -101,6 +101,7 @@ db_password=yourpassword
 db_name=e_meeting_db
 
 secret_key=yourJWTsecret
+SKIP_MIGRATION=false # Kalau sudah berikan "True"
 ```
 
 ---
