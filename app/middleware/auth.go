@@ -73,9 +73,7 @@ func RoleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
 	}
 }
 
-// ==========================================
 // HELPER FUNCTION (UNTUK DIPAKAI DI HANDLER)
-// ==========================================
 
 // ExtractTokenUserID mengambil ID user dari token JWT yang sudah disimpan di context
 func ExtractTokenUserID(c echo.Context) int {
@@ -85,8 +83,7 @@ func ExtractTokenUserID(c echo.Context) int {
 	if user.Valid {
 		claims := user.Claims.(jwt.MapClaims)
 
-		// Perhatikan: Di JWT, angka biasanya dibaca sebagai float64
-		// Pastikan key claims-nya sesuai dengan saat kamu generate token (misal "id" atau "user_id")
+		// claims harus sesuai dengan generate token (misal "id" atau "user_id")
 		if idFloat, ok := claims["id"].(float64); ok {
 			return int(idFloat)
 		}
