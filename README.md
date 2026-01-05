@@ -97,7 +97,7 @@ db_host=localhost
 db_port=5432
 db_user=postgres
 db_password=yourpassword
-db_name=e_meeting_db
+db_name=e_hotel_db
 
 secret_key=yourJWTsecret
 SKIP_MIGRATION=false # Kalau sudah berikan "True"
@@ -265,4 +265,4 @@ Open untuk Pull Request dan Issue.
 
 ## 📄 License
 
-MIT License © 2025 — E-Meeting API
+MIT License © 2025 — E-Hotel API
