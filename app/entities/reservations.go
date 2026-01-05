@@ -4,9 +4,7 @@ import (
 	"time"
 )
 
-// ==========================================
 // 1. REQUEST MODELS
-// ==========================================
 
 type ReservationRequest struct {
 	UserID      int    `json:"userID"` // Diisi token
@@ -25,9 +23,7 @@ type UpdateReservationRequest struct {
 	Status        string `json:"status" validate:"required,oneof=booked cancel paid"`
 }
 
-// ==========================================
 // 2. RESPONSE MODELS
-// ==========================================
 
 // --- A. Calculation Response ---
 type CalculateReservationData struct {
@@ -76,7 +72,7 @@ type ReservationHistoryData struct {
 	Total         float64   `json:"total"`
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"createdAt"`
-	// Kita gunakan struct khusus untuk response history agar aman dari format RoomInfo
+	// struct khusus untuk response history
 	Rooms []ReservationRoomDetail `json:"rooms"`
 }
 
@@ -118,9 +114,7 @@ type RoomSchedule struct {
 	TotalParticipant int       `json:"totalParticipant"`
 }
 
-// ==========================================
 // 3. REPOSITORY DTOs
-// ==========================================
 
 type ReservationData struct {
 	ID                int
@@ -135,7 +129,7 @@ type ReservationData struct {
 	Total             float64
 	TotalParticipants int
 	AddSnack          bool
-	DurationMinute    int // Field ini penting untuk Repository
+	DurationMinute    int
 }
 
 type ReservationDetailData struct {

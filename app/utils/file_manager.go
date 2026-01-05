@@ -10,32 +10,32 @@ import (
 
 // ProcessImageMove memindahkan file fisik dari temp ke permanent folder
 func ProcessImageMove(oldFullURL, newFullURL, baseURL, targetFolder string) (string, error) {
-	// 1. Validasi: Jika URL kosong atau sama persis dengan yang lama, return aja
+	// 1. Validasi:
 	if newFullURL == "" || newFullURL == oldFullURL {
 		return oldFullURL, nil
 	}
 
-	// 2. Validasi: Jika URL tidak mengandung "assets/temp", berarti bukan file baru dari upload
-	// (Bisa jadi user mengirim URL gambar lama yang memang sudah permanent)
+	// 2. Validasi:
+	// Jika newFullURL tidak mengandung "assets/temp", kembalikan oldFullURL
 	if !strings.Contains(newFullURL, "assets/temp") {
 		return newFullURL, nil
 	}
 
 	// --- LOGIC PINDAH FILE ---
 
-	// Ambil nama file dari URL (misal: "17675.jpeg")
+	// Ambil nama file dari URL
 	fileName := filepath.Base(newFullURL)
 
 	// Tentukan path asal (temp) dan tujuan (permanent)
-	// Asumsi struktur folder project kamu: root/assets/temp dan root/assets/image/users
+	// Asumsi struktur folder project: root/assets/temp dan root/assets/image/users
 	tempPath := filepath.Join("assets", "temp", fileName)
 	finalDir := filepath.Join("assets", "image", targetFolder) // targetFolder = "users" atau "rooms"
 	finalPath := filepath.Join(finalDir, fileName)
 
-	// Cek apakah file fisik ada di folder temp?
+	// Cek apakah file ada di folder temp?
 	if _, err := os.Stat(tempPath); err != nil {
 		log.Printf("[ERROR] File temp tidak ditemukan: %s", tempPath)
-		// Jika file fisik gak ada, kembalikan error (agar user tau upload gagal/expired)
+		// Jika file gak ada, kembalikan error
 		return oldFullURL, fmt.Errorf("temp file not found on server")
 	}
 
@@ -62,7 +62,6 @@ func ProcessImageMove(oldFullURL, newFullURL, baseURL, targetFolder string) (str
 	// --- RETURN URL BARU ---
 
 	// Construct URL baru: http://localhost:8080/assets/image/users/namafile.jpeg
-	// Pastikan tidak ada double slash
 	cleanBaseURL := strings.TrimRight(baseURL, "/")
 	finalURL := fmt.Sprintf("%s/assets/image/%s/%s", cleanBaseURL, targetFolder, fileName)
 

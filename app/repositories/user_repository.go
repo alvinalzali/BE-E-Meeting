@@ -9,7 +9,7 @@ import (
 
 // UserRepository adalah 'Daftar Menu' apa saja yang bisa dilakukan ke tabel users
 type UserRepository interface {
-	Create(user entities.User, avatarURL string) error               // Tambah parameter avatarURL
+	Create(user entities.User, avatarURL string) error
 	GetByUsername(username string) (entities.GetUser, string, error) // Return GetUser + Hash
 	GetByEmail(email string) (entities.GetUser, string, error)       // Return GetUser + Hash
 	GetByID(id int) (entities.GetUser, error)

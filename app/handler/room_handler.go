@@ -10,7 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Helper variable (Bisa dihapus jika logic default image dipindah ke Usecase)
+// Helper variable
 var DefaultRoomURL = "http://localhost:8080/assets/default/default_room.jpg"
 
 type RoomHandler struct {
@@ -154,7 +154,7 @@ func (h *RoomHandler) UpdateRoom(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, echo.Map{
 		"message": "room updated successfully",
-		"data":    updatedRoom, // <--- Pakai updatedRoom
+		"data":    updatedRoom,
 	})
 }
 
