@@ -13,7 +13,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Interface UserUsecase: Daftar menu logic yang bisa dipanggil oleh Handler
 type UserUsecase interface {
 	Register(user entities.User) error
 	Login(username string, password string) (string, string, string, error) // return: accessToken, refreshToken, userID
@@ -27,7 +26,6 @@ type userUsecase struct {
 	userRepo repositories.UserRepository
 }
 
-// NewUserUsecase: Constructor untuk inject repository ke usecase
 func NewUserUsecase(userRepo repositories.UserRepository) UserUsecase {
 	return &userUsecase{userRepo: userRepo}
 }
@@ -47,7 +45,6 @@ func (u *userUsecase) Register(user entities.User) error {
 	user.Password = string(hashedPassword) // Timpa password asli dengan hash
 
 	// C. Set Default Avatar
-	// (Sebaiknya URL ini dari .env, tapi kita samakan dulu dengan main.go)
 	defaultAvatar := "http://localhost:8080/assets/default/default_profile.jpg"
 
 	// D. Panggil Repository
@@ -68,7 +65,6 @@ func (u *userUsecase) Login(inputUsername string, password string) (string, stri
 	}
 
 	if err != nil {
-		// Samarkan error database, return invalid credentials agar aman
 		return "", "", "", errors.New("invalid credentials")
 	}
 
@@ -118,20 +114,13 @@ func (u *userUsecase) UpdateUser(id int, input entities.UpdateUser, baseURL stri
 	}
 
 	// 2. LOGIC PEMINDAHAN GAMBAR
-	// Cek apakah ada request update avatar?
 	if input.Avatar_url != "" {
 
-		// Panggil Utils untuk memindah file fisik
 		newAvatarURL, err := utils.ProcessImageMove(oldUser.Avatar_url, input.Avatar_url, baseURL, "users")
 		if err != nil {
 			return input, err
 		}
 
-		// ============================================================
-		// [PERBAIKAN PENTING DISINI]
-		// Kamu wajib menimpa input.Avatar_url dengan URL baru (permanent)
-		// Jika baris ini hilang, database akan menyimpan link /temp/
-		// ============================================================
 		input.Avatar_url = newAvatarURL
 
 	} else {
@@ -183,8 +172,6 @@ func (u *userUsecase) UpdateUser(id int, input entities.UpdateUser, baseURL stri
 	}
 
 	// 5. Simpan ke Database
-	// Karena kita sudah melakukan 'input.Avatar_url = newAvatarURL' di atas,
-	// maka yang tersimpan ke DB adalah link permanent.
 	err = u.userRepo.Update(input, id)
 	if err != nil {
 		return input, err
@@ -205,7 +192,7 @@ func (u *userUsecase) RequestPasswordReset(email string) (string, error) {
 	// Generate Token (Berlaku 30 menit)
 	secret := []byte(os.Getenv("jwt_secret"))
 	claims := &entities.Claims{
-		Username: email, // Kita simpan email di claim username/subject
+		Username: email, // simpan email di claim username/subject
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -252,9 +239,7 @@ func (u *userUsecase) ResetPassword(tokenString, newPassword, confirmPassword st
 		return errors.New("user not found")
 	}
 
-	// Konversi ID string ke int (karena struct GetUser ID-nya string di entities kamu, tapi repo Update butuh int)
-	// Kita sesuaikan dengan struct entities.GetUser kamu.
-	// Jika entities.GetUser ID-nya string, kita parse.
+	// Konversi ID string ke int (karena struct GetUser ID-nya string di entities, tapi repo Update butuh int)
 	userID, _ := strconv.Atoi(user.Id)
 
 	// E. Hash Password Baru
@@ -267,9 +252,7 @@ func (u *userUsecase) ResetPassword(tokenString, newPassword, confirmPassword st
 	return u.userRepo.UpdatePassword(userID, string(hashedPassword))
 }
 
-// ==========================================
 // HELPER FUNCTIONS (Private / Helper Logic)
-// ==========================================
 
 func isValidPassword(password string) bool {
 	var hasUpper, hasLower, hasNumber, hasSpecial bool
@@ -301,7 +284,7 @@ func generateToken(username, role string, duration time.Duration) (string, error
 	// Ambil secret dari ENV
 	secretStr := os.Getenv("jwt_secret")
 	if secretStr == "" {
-		secretStr = os.Getenv("secret_key") // Jaga-jaga nama variabel beda
+		secretStr = os.Getenv("secret_key") //kalau var secrer beda
 	}
 	jwtSecret := []byte(secretStr)
 

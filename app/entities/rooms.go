@@ -26,12 +26,12 @@ type Room struct {
 }
 
 type RoomReservationRequest struct {
-	ID          int       `json:"roomID"` // agar lebih eksplisit
+	ID          int       `json:"roomID"`
 	StartTime   time.Time `json:"startTime"`
 	EndTime     time.Time `json:"endTime"`
-	Participant int       `json:"participant"` // peserta per ruangan
+	Participant int       `json:"participant"`
 	SnackID     int       `json:"snackID"`
-	AddSnack    bool      `json:"addSnack"` // kalau ruangan ini pakai snack atau tidak
+	AddSnack    bool      `json:"addSnack"`
 }
 
 type RoomInfo struct {

@@ -51,7 +51,7 @@ func (h *ReservationHandler) CalculateReservation(c echo.Context) error {
 		addSnack = true
 	}
 
-	// [PENTING] Menggunakan entities.RoomReservationRequest dari room.go
+	// entities.RoomReservationRequest dari room.go
 	req := entities.ReservationRequest{
 		Rooms: []entities.RoomReservationRequest{{
 			ID:          roomID,

@@ -9,7 +9,7 @@ import (
 	_ "github.com/lib/pq" // Driver postgres
 )
 
-// ConnectDB bertugas membuka koneksi ke database
+// ConnectDB
 func ConnectDB(username, password, dbname, host string, port int) *sql.DB {
 	connSt := "host=" + host + " port=" + strconv.Itoa(port) + " user=" + username + " password=" + password + " dbname=" + dbname + " sslmode=disable"
 	db, err := sql.Open("postgres", connSt)

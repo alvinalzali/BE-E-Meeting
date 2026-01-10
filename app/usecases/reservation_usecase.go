@@ -110,7 +110,7 @@ func (u *reservationUsecase) Create(req entities.ReservationRequest) error {
 	resData.ContactCompany = req.Company
 	resData.Note = req.Notes
 
-	// Kita bisa hitung total participants dari penjumlahan room participants
+	// hitung total participants dari penjumlahan room participants
 	calculatedTotalParticipants := 0
 	totalGlobal := 0.0
 

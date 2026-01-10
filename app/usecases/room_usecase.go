@@ -3,7 +3,7 @@ package usecases
 import (
 	"BE-E-Meeting/app/entities"
 	"BE-E-Meeting/app/repositories"
-	"BE-E-Meeting/app/utils" // <--- Jangan lupa import utils
+	"BE-E-Meeting/app/utils"
 	"errors"
 )
 
@@ -26,7 +26,7 @@ func NewRoomUsecase(roomRepo repositories.RoomRepository) RoomUsecase {
 }
 
 // Update Signature: Tambah baseURL
-func (u *roomUsecase) Create(room entities.RoomRequest, baseURL string) (entities.RoomRequest, error) { // <--- Ubah Return
+func (u *roomUsecase) Create(room entities.RoomRequest, baseURL string) (entities.RoomRequest, error) {
 	// 1. Validasi
 	if room.Name == "" || room.Type == "" || room.Capacity <= 0 || room.PricePerHour <= 0 {
 		return room, errors.New("invalid room data")
@@ -122,7 +122,7 @@ func (u *roomUsecase) Update(id int, room entities.RoomRequest, baseURL string) 
 }
 
 func (u *roomUsecase) Delete(id int) error {
-	// Opsional: Sebelum delete DB, kamu bisa ambil data dulu untuk hapus gambarnya dari storage
+	// Opsional: Sebelum delete DB, bisa ambil data dulu untuk hapus gambarnya dari storage
 	// oldRoom, _ := u.roomRepo.GetByID(id)
 
 	rowsAffected, err := u.roomRepo.Delete(id)

@@ -27,19 +27,14 @@ func (r *dashboardRepository) GetDashboardData(startDate, endDate time.Time) (en
 		Rooms: []entities.DashboardRoom{},
 	}
 
-	// ------------------------------------------
 	// A. HITUNG TOTAL ROOM
-	// ------------------------------------------
 	err := r.db.QueryRow(`SELECT COUNT(*) FROM rooms`).Scan(&result.TotalRoom)
 	if err != nil {
 		return result, err
 	}
 
-	// ------------------------------------------
-	// B. BANGUN FILTER (Tanggal & Status Paid)
-	// ------------------------------------------
+	// B. FILTER (Tanggal & Status Paid)
 	// Filter ini hanya akan ditempelkan pada tabel RESERVASI, bukan pada tabel ROOMS
-	// agar rooms yang tidak laku tetap muncul di list.
 
 	filterConditions := " WHERE res.status_reservation = 'paid' "
 	var args []interface{}
@@ -56,10 +51,9 @@ func (r *dashboardRepository) GetDashboardData(startDate, endDate time.Time) (en
 		argIdx++
 	}
 
-	// ------------------------------------------
 	// C. HITUNG TOTAL STATS (Visitor, Reservation, Omzet)
 	// ------------------------------------------
-	// Query ini menggunakan INNER JOIN karena kita memang hanya mau menghitung yang ada transaksinya
+	// INNER JOIN karena menghitung yang ada transaksinya
 	totalsQuery := `
 		SELECT 
 			COALESCE(SUM(rd.total_participants), 0),
@@ -74,11 +68,9 @@ func (r *dashboardRepository) GetDashboardData(startDate, endDate time.Time) (en
 		return result, err
 	}
 
-	// ------------------------------------------
 	// D. HITUNG ROOM STATS (Per Ruangan)
-	// ------------------------------------------
-	// Teknik: Kita filter dulu reservasinya di dalam subquery (FilteredRes),
-	// baru kita LEFT JOIN ke tabel rooms. Ini menjamin semua room tetap muncul.
+	// filter dulu reservasinya di dalam subquery (FilteredRes),
+	// baru LEFT JOIN ke tabel rooms
 
 	roomQuery := `
 		SELECT 
