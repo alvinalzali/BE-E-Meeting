@@ -18,6 +18,10 @@ type User struct {
 	// password harus ada angka, huruf besar, huruf kecil, dan simbol
 	Password string `json:"password" validate:"required"`
 	Name     string `json:"name" validate:"required"`
+
+	// Tambahan untuk OAuth (Boleh kosong/omitempty agar tidak merusak register biasa)
+	Role      string `json:"role"`
+	AvatarURL string `json:"imageURL"`
 }
 
 type GetUser struct {
@@ -57,4 +61,12 @@ type ResetRequest struct {
 type PasswordConfirmReset struct {
 	ConfirmPassword string `json:"confirm_password" validate:"required"`
 	NewPassword     string `json:"new_password" validate:"required"`
+}
+
+type GoogleUserInfo struct {
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	VerifiedEmail bool   `json:"verified_email"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
 }

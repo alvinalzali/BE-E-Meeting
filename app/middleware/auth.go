@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
@@ -73,9 +74,7 @@ func RoleAuthMiddleware(requiredRoles ...string) echo.MiddlewareFunc {
 	}
 }
 
-// ==========================================
-// HELPER FUNCTION (UNTUK DIPAKAI DI HANDLER)
-// ==========================================
+// Helper
 
 // ExtractTokenUserID mengambil ID user dari token JWT yang sudah disimpan di context
 func ExtractTokenUserID(c echo.Context) int {
@@ -85,11 +84,24 @@ func ExtractTokenUserID(c echo.Context) int {
 	if user.Valid {
 		claims := user.Claims.(jwt.MapClaims)
 
-		// Perhatikan: Di JWT, angka biasanya dibaca sebagai float64
-		// Pastikan key claims-nya sesuai dengan saat kamu generate token (misal "id" atau "user_id")
+		// Pastikan key claims-nya sesuai dengan generate token (misal "id" atau "user_id")
 		if idFloat, ok := claims["id"].(float64); ok {
 			return int(idFloat)
 		}
 	}
 	return 0
+}
+
+// untuk Oauth
+func GenerateToken(userID int, username, role string) (string, error) {
+	claims := jwt.MapClaims{}
+	claims["id"] = userID
+	claims["username"] = username
+	claims["role"] = role
+	claims["exp"] = time.Now().Add(time.Hour * 72).Unix() // Token berlaku 72 jam
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Pastikan key ini sama dengan key di RoleAuthMiddleware
+	return token.SignedString([]byte(os.Getenv("secret_key")))
 }
