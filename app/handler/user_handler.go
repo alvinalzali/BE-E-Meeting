@@ -198,14 +198,15 @@ func (h *UserHandler) RequestPasswordReset(c echo.Context) error {
 	}
 
 	// Panggil Usecase
-	token, err := h.usecase.RequestPasswordReset(req.Email)
+	_, err := h.usecase.RequestPasswordReset(req.Email)
+	// token, err := h.usecase.RequestPasswordReset(req.Email) untuk debug token
 	if err != nil {
 		return c.JSON(http.StatusNotFound, echo.Map{"error": err.Error()})
 	}
 
 	return c.JSON(http.StatusOK, echo.Map{
-		"message": "Update Password Success!",
-		"token":   token,
+		"message": "Link reset password sent successfully to your email",
+		// debug token "token":   token,
 	})
 }
 
@@ -221,14 +222,14 @@ func (h *UserHandler) RequestPasswordReset(c echo.Context) error {
 // @Failure 400 {object} map[string]string
 // @Router /password/reset/{id} [put]
 func (h *UserHandler) ResetPassword(c echo.Context) error {
-	// Di sini 'id' parameter sebenarnya adalah Token JWT
-	token := c.Param("id")
+	token := c.Param("token")
 
 	var req entities.PasswordConfirmReset
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid format"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "bad request"})
 	}
 
+	// Panggil Usecase
 	err := h.usecase.ResetPassword(token, req.NewPassword, req.ConfirmPassword)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": err.Error()})

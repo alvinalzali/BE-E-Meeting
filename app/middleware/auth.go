@@ -105,3 +105,36 @@ func GenerateToken(userID int, username, role string) (string, error) {
 	// Pastikan key ini sama dengan key di RoleAuthMiddleware
 	return token.SignedString([]byte(os.Getenv("secret_key")))
 }
+
+func GenerateResetToken(userID int, email string) (string, error) {
+	claims := jwt.MapClaims{}
+	claims["id"] = userID
+	claims["email"] = email
+	claims["type"] = "reset_password" // Penanda khusus agar beda dengan token login
+	claims["exp"] = time.Now().Add(time.Minute * 15).Unix()
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(os.Getenv("secret_key")))
+}
+
+func ValidateResetToken(tokenString string) (jwt.MapClaims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("secret_key")), nil
+	})
+
+	if err != nil || !token.Valid {
+		return nil, err
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, echo.ErrUnauthorized
+	}
+
+	// Cek tipe token
+	if claims["type"] != "reset_password" {
+		return nil, echo.ErrUnauthorized
+	}
+
+	return claims, nil
+}
