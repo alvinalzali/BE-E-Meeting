@@ -183,13 +183,13 @@ func (u *userUsecase) UpdateUser(id int, input entities.UpdateUser, baseURL stri
 
 // Request Reset (Generate Token)
 func (u *userUsecase) RequestPasswordReset(email string) (string, error) {
-	// Cek apakah email ada
+	// Cek email
 	_, _, err := u.userRepo.GetByEmail(email)
 	if err != nil {
 		return "", errors.New("email not found")
 	}
 
-	// Generate Token (Berlaku 30 menit)
+	// Generate Token (30 MENIT)
 	secret := []byte(os.Getenv("jwt_secret"))
 	claims := &entities.Claims{
 		Username: email, // simpan email di claim username/subject
@@ -199,22 +199,31 @@ func (u *userUsecase) RequestPasswordReset(email string) (string, error) {
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(secret)
+
+	// [FIX]: Sign token
+	tokenString, err := token.SignedString(secret)
+	if err != nil {
+		return "", err
+	}
+
+	// Kirim Email
+	go func() {
+		_ = utils.SendResetEmail(email, tokenString)
+	}()
+
+	return tokenString, nil
 }
 
 // Process Reset (Validate Token & Update DB)
 func (u *userUsecase) ResetPassword(tokenString, newPassword, confirmPassword string) error {
-	// A. Validasi Password Match
 	if newPassword != confirmPassword {
 		return errors.New("new password and confirm password do not match")
 	}
 
-	// B. Validasi Kekuatan Password
 	if !isValidPassword(newPassword) {
 		return errors.New("password must contain at least one uppercase letter, one lowercase letter, one number, and one special character")
 	}
 
-	// C. Parse & Validasi Token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return []byte(os.Getenv("jwt_secret")), nil
 	})
@@ -227,28 +236,24 @@ func (u *userUsecase) ResetPassword(tokenString, newPassword, confirmPassword st
 		return errors.New("invalid token claims")
 	}
 
-	// Ambil email dari token
 	email, ok := claims["username"].(string)
 	if !ok {
 		return errors.New("invalid token payload")
 	}
 
-	// D. Ambil User ID berdasarkan Email
 	user, _, err := u.userRepo.GetByEmail(email)
 	if err != nil {
 		return errors.New("user not found")
 	}
 
-	// Konversi ID string ke int (karena struct GetUser ID-nya string di entities, tapi repo Update butuh int)
 	userID, _ := strconv.Atoi(user.Id)
 
-	// E. Hash Password Baru
+	// Hash Password Baru
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
 
-	// F. Update ke DB
 	return u.userRepo.UpdatePassword(userID, string(hashedPassword))
 }
 

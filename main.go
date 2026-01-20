@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"BE-E-Meeting/app/config"
 	"BE-E-Meeting/app/handler"
 	"BE-E-Meeting/app/middleware"
 	"BE-E-Meeting/app/repositories"
@@ -78,6 +79,9 @@ func main() {
 	// DEPENDENCY INJECTION (WIRING)
 	// ==========================================
 
+	// Google Oauth
+	googleConfig := config.LoadGoogleConfig()
+
 	// Repositories
 	userRepo := repositories.NewUserRepository(db)
 	roomRepo := repositories.NewRoomRepository(db)
@@ -91,6 +95,7 @@ func main() {
 	snackUsecase := usecases.NewSnackUsecase(snackRepo)
 	resUsecase := usecases.NewReservationUsecase(resRepo, roomRepo, snackRepo)
 	dashboardUsecase := usecases.NewDashboardUsecase(dashboardRepo)
+	authUsecase := usecases.NewAuthUsecase(userRepo, googleConfig)
 
 	// Handlers
 	userHandler := handler.NewUserHandler(userUsecase)
@@ -99,6 +104,7 @@ func main() {
 	resHandler := handler.NewReservationHandler(resUsecase)
 	dashboardHandler := handler.NewDashboardHandler(dashboardUsecase)
 	fileHandler := handler.NewFileHandler()
+	authHandler := handler.NewAuthHandler(authUsecase)
 
 	// ==========================================
 	// ROUTES
@@ -115,6 +121,10 @@ func main() {
 	e.PUT("/password/reset/:id", userHandler.ResetPassword)
 	e.GET("/users/:id", userHandler.GetProfile, middleware.RoleAuthMiddleware("admin", "user"))
 	e.PUT("/users/:id", userHandler.UpdateUser, middleware.RoleAuthMiddleware("admin", "user"))
+
+	// google auth
+	e.GET("/auth/google/login", authHandler.GoogleLogin)
+	e.GET("/auth/google/callback", authHandler.GoogleCallback)
 
 	// --- ROOM ---
 	e.POST("/rooms", roomHandler.CreateRoom, middleware.RoleAuthMiddleware("admin"))

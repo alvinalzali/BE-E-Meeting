@@ -35,6 +35,10 @@ func (r *userRepository) Create(user entities.User, avatarURL string) error {
 	// Status kita set default 'active' di sini sesuai logic main.go sebelumnya
 	status := "active"
 
+	if user.AvatarURL == "" {
+		user.AvatarURL = avatarURL
+	}
+
 	sqlStatement := `INSERT INTO users (username, email, password_hash, name, status, avatar_url, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`
 
 	_, err := r.db.Exec(sqlStatement, user.Username, user.Email, user.Password, user.Name, status, avatarURL)
