@@ -3,61 +3,66 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: skbe5-e-meeting-migrate_kelompok-1
+    container_name: e-hotel-migrate
+   
     entrypoint:
       [
         "migrate",
         "-path",
         "migrations",
         "-database",
-        "postgres://e_meeting:@db:5432/e_meeting?sslmode=disable",
+        "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable",
         "up",
       ]
     depends_on:
       - db
     networks:
-      - skbe5-app-network-kelompok-1
-    restart: "no" # hanya jalan sekali
+      - e-hotel-network
+    restart: "no"
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: e-meeting-api-kelompok-1
+    container_name: e-hotel-app
     depends_on:
       - db
+    
+    env_file:
+      - .env
     environment:
-      - db_host=db
-      - db_port=5432
-      - db_user=e_meeting
-      - db_name=e_meeting
-      - db_password=
-      - secret_key=kucinguia
-      - SKIP_MIGRATION=true
+      - db_host=${DB_HOST}
+      - db_port=${DB_PORT}
+      - db_user=${DB_USER}
+      - db_name=${DB_NAME}
+      - db_password=${DB_PASSWORD}
+      - secret_key=${SECRET_KEY}
+      - SKIP_MIGRATION=${SKIP_MIGRATION}
     ports:
       - "8082:8080"
     networks:
-      - skbe5-app-network-kelompok-1
+      - e-hotel-network
     restart: unless-stopped
 
   db:
     image: postgres:15-alpine
-    container_name: skbe5_postgres_db_kelompok_1
+    container_name: postgres_db_e-hotel
     environment:
-      - POSTGRES_USER=e_meeting
-      - POSTGRES_DB=e_meeting
-      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      # 'trust' dihapus karena kita sudah pakai password
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5436:5432"
     networks:
-      - skbe5-app-network-kelompok-1
+      - e-hotel-network
     restart: unless-stopped
 
 volumes:
   pgdata:
 
 networks:
-  skbe5-app-network-kelompok-1:
-    name: skbe5-app-network-kelompok-1
+  e-hotel-network:
+    name: e-hotel-network
